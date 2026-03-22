@@ -451,3 +451,66 @@ S 态测试的价值主要是把“U 态受 `use` 约束”和“非 U 态按扩
 3. 复用已经建立的 stage2 大测试骨架，把 `SETNEWID/idgen` 子段并入对应的 U/S 态测试，或在确有必要时再单独拆文件。
 
 换句话说，阶段 2 的目标不是把 ID 扩展“做大”，而是把后续所有阶段都会依赖的“ID 功能语义底座”做稳。
+
+## 12. 阶段 2 当前实施总结
+
+截至当前版本，阶段 2 已经完成了第一轮代码接入和编译级验证，整体实现遵循了本阶段“先做功能线闭环，不碰 `MinorCPU` shadow state”的边界。
+
+### 12.1 已完成的代码实现
+
+1. 在 `arch/riscv/isa.hh` 与 `arch/riscv/isa.cc` 中补入了阶段 2 所需的 ISA helper，包括：
+   1. `PCID` 只读 helper。
+   2. `IDCSR.use/puse` 字段读取 helper。
+   3. U 态 `use` 开关判断 helper。
+   4. `gprid` 的清空、`rs1` 传播、`pcid` 传播和常量写入 helper。
+2. 在 `arch/riscv/isa/formats/standard.isa` 中，没有去修改 gem5 更底层的寄存器接口，而是采用了“给现有 format 增加可选 `id_code` 钩子”的实现方式：
+   1. `ROp/IOp/UOp/Jump/JOp` 现在可以在普通写回后附加阶段 2 的 ID 语义。
+   2. 保留了原有 `generateDisassembly()`、`branchTarget()` 和普通执行路径，不影响未使用 `id_code` 的指令。
+3. 在 `arch/riscv/isa/decoder.isa` 中完成了阶段 2 指令与普通指令语义接入：
+   1. 新增 `SETDUMMYID` 与 `SETRAWID` 的 decode 和执行语义。
+   2. 为 `add/sub/addi` 接入 `rs1` 的 GPRID 传播。
+   3. 为 `auipc/jal/jalr` 接入 `PCID` 到 `rd.gprid` 的传播。
+   4. 为 `lui/andi/ori/xori/srli/srai/slti/sltiu` 接入目标 GPRID 清空逻辑。
+
+### 12.2 已完成的测试整理
+
+1. 在 `benchmark/simple-sigriscv-test/gem5_test/tests/` 中新增了公共测试头文件 `test_macros.inc`，统一放置：
+   1. `ASSERT_CSR_EQ`
+   2. `ENTER_S_MODE`
+   3. `ENTER_U_MODE`
+2. 新增 `stage2_u_mode.S`：
+   1. 通过 `medeleg + sret/ecall` 让 S 态检查 U 态执行后的 `gprid` 结果。
+   2. 覆盖 `use=1` 时的传播/清空行为，以及 `use=0` 时的“不改变 ID”行为。
+   3. 在 `setup_phase1/enter_phase1/check_phase1/setup_phase2/enter_phase2/check_phase2` 等关键节点加入 `debug_str` 输出。
+3. 新增 `stage2_s_mode.S`：
+   1. 先在 S 态执行一轮阶段 2 指令，验证当前实现下 S 态的 ID 保持不变。
+   2. 再把 `IDCSR.use=0`，切到 U 态执行同一轮测试，验证 U 态下 ID 仍保持不变。
+
+### 12.3 当前验证状态
+
+已完成的验证：
+
+1. `make test-elf TEST=stage2_s_mode` 可成功生成 `.elf/.bin/.dump`。
+2. `make test-elf TEST=stage2_u_mode` 可成功生成 `.elf/.bin/.dump`。
+3. `scons build/RISCV/arch/riscv/generated/decoder.o build/RISCV/arch/riscv/decoder.o build/RISCV/arch/riscv/isa.o -j4` 已通过，说明：
+   1. `.isa` parser 可正确解析本阶段新增的 `id_code` 扩展和 decoder 修改。
+   2. 关键 RISC-V 相关生成代码和 `isa.cc` 能完成编译。
+
+尚未完成的验证：
+
+1. 还没有完成完整 `build/RISCV/gem5.opt` 的端到端链接与运行。
+2. 还没有在 gem5 仿真里跑通 `stage2_s_mode` 和 `stage2_u_mode` 的运行时结果。
+
+### 12.4 当前阶段结论
+
+目前可以认为阶段 2 已经完成了“第一轮实现落地 + 编译级闭环”：
+
+1. 阶段 2 的核心 ISA/helper/decode/template 改动已经接入。
+2. 对应的 baremetal 测试骨架已经建立，并能成功构建。
+3. 关键未完成项已经从“怎么实现”收缩为“运行时行为是否与预期完全一致”。
+
+因此，后续最直接的工作就是：
+
+1. 完成完整 gem5 二进制构建。
+2. 运行 `stage2_s_mode` 与 `stage2_u_mode`。
+3. 根据运行日志和 `DEBUG` 输出修正阶段 2 的剩余功能问题。
