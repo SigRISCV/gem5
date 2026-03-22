@@ -342,15 +342,15 @@ RegClass vecPredRegClass(VecPredRegClass, VecPredRegClassName, 0,
 RegClass matRegClass(MatRegClass, MatRegClassName, 0, debug::MatRegs);
 RegClass ccRegClass(CCRegClass, CCRegClassName, 0, debug::IntRegs);
 
-constexpr std::array<uint64_t, 40> SigriscvDebugCsrs = {{
-    CSR_MKEYL,   CSR_MKEYH,   CSR_SKEYL,   CSR_SKEYH,   CSR_GPRID0,
-    CSR_GPRID1,  CSR_GPRID2,  CSR_GPRID3,  CSR_GPRID4,  CSR_GPRID5,
-    CSR_GPRID6,  CSR_GPRID7,  CSR_GPRID8,  CSR_GPRID9,  CSR_GPRID10,
-    CSR_GPRID11, CSR_GPRID12, CSR_GPRID13, CSR_GPRID14, CSR_GPRID15,
-    CSR_GPRID16, CSR_GPRID17, CSR_GPRID18, CSR_GPRID19, CSR_GPRID20,
-    CSR_GPRID21, CSR_GPRID22, CSR_GPRID23, CSR_GPRID24, CSR_GPRID25,
-    CSR_GPRID26, CSR_GPRID27, CSR_GPRID28, CSR_GPRID29, CSR_GPRID30,
-    CSR_GPRID31, CSR_PCID,    CSR_IDCSR,   CSR_ENCMAP,  CSR_EXITRAW,
+constexpr std::array<uint64_t, 8> SigriscvDebugCsrs = {{
+    CSR_MKEYL,
+    CSR_MKEYH,
+    CSR_SKEYL,
+    CSR_SKEYH,
+    CSR_PCID,
+    CSR_IDCSR,
+    CSR_ENCMAP,
+    CSR_EXITRAW,
 }};
 
 void
@@ -358,7 +358,8 @@ printHexValue(std::ostream &os, RegVal value)
 {
     std::ios old_state(nullptr);
     old_state.copyfmt(os);
-    os << "0x" << std::hex << value;
+    os << "0x" << std::hex << std::uppercase << std::setw(16)
+       << std::setfill('0') << value;
     os.copyfmt(old_state);
 }
 
@@ -1442,11 +1443,20 @@ ISA::executeSigriscvDebug(ExecContext *xc, RegIndex src_reg_idx,
     switch (imm) {
         case 0:
             out << "GPR dump\n";
-            for (int i = 0; i < int_reg::NumArchRegs; ++i) {
-                out << 'x' << i << " (" << int_reg::RegNames[i] << ") = ";
-                printHexValue(out, tc->getReg(intRegClass[i]));
-                out << " gprid=";
-                printHexValue(out, readGprId(i));
+            for (int i = 0; i < int_reg::NumArchRegs; i += 4) {
+                for (int j = 0; j < 4; j++) {
+                    out << 'x' << i << " (" << int_reg::RegNames[i + j]
+                        << ") = ";
+                    printHexValue(out, tc->getReg(intRegClass[i + j]));
+                    out << '\t';
+                }
+                out << '\n';
+                for (int j = 0; j < 4; j++) {
+                    out << 'x' << i << " (" << int_reg::RegNames[i + j]
+                        << ") = ";
+                    printHexValue(out, readGprId(i + j));
+                    out << '\t';
+                }
                 out << '\n';
             }
 
