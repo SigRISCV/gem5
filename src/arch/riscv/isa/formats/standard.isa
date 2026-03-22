@@ -87,6 +87,47 @@ def template ImmExecute {{
     }
 }};
 
+def template IdBasicExecute {{
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+        %(op_rd)s;
+        %(code)s;
+        %(op_wb)s;
+        %(id_code)s;
+        return NoFault;
+    }
+}};
+
+def template IdImmExecute {{
+    Fault
+    %(class_name)s::execute(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+        %(op_rd)s;
+        %(code)s;
+        %(op_wb)s;
+        %(id_code)s;
+        return NoFault;
+    }
+
+    std::string
+    %(class_name)s::generateDisassembly(Addr pc,
+            const loader::SymbolTable *symtab) const
+    {
+        std::vector<RegId> indices = {%(regs)s};
+        std::stringstream ss;
+        ss << mnemonic << ' ';
+        for (const RegId& idx: indices)
+            ss << registerName(idx) << ", ";
+        ss << imm;
+        return ss.str();
+    }
+}};
+
 def template CILuiExecute {{
     Fault
     %(class_name)s::execute(
@@ -217,6 +258,42 @@ def template BranchExecute {{
     }
 }};
 
+def template IdBranchExecute {{
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+        %(op_rd)s;
+        %(code)s;
+        %(op_wb)s;
+        %(id_code)s;
+        return NoFault;
+    }
+
+    std::unique_ptr<PCStateBase>
+    %(class_name)s::branchTarget(const PCStateBase &branch_pc) const
+    {
+        auto &rpc = branch_pc.as<RiscvISA::PCState>();
+        std::unique_ptr<PCState> npc(dynamic_cast<PCState*>(rpc.clone()));
+        npc->set(rvSext(rpc.pc() + imm));
+        return npc;
+    }
+
+    std::string
+    %(class_name)s::generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const
+    {
+        std::vector<RegId> indices = {%(regs)s};
+        std::stringstream ss;
+        ss << mnemonic << ' ';
+        for (const RegId& idx: indices)
+            ss << registerName(idx) << ", ";
+        ss << imm;
+        return ss.str();
+    }
+}};
+
 def template JumpDeclare {{
     //
     // Static instruction class for "%(mnemonic)s".
@@ -299,6 +376,39 @@ def template JumpExecute {{
         %(op_rd)s;
         %(code)s;
         %(op_wb)s;
+        return NoFault;
+    }
+
+    std::unique_ptr<PCStateBase>
+    %(class_name)s::branchTarget(ThreadContext *tc) const
+    {
+        PCStateBase *pc_ptr = tc->pcState().clone();
+        pc_ptr->as<PCState>().set(
+            rvSext((tc->getReg(srcRegIdx(0)) + imm) & ~0x1));
+        return std::unique_ptr<PCStateBase>{pc_ptr};
+    }
+
+    std::string
+    %(class_name)s::generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+           << imm << "(" << registerName(srcRegIdx(0)) << ")";
+        return ss.str();
+    }
+}};
+
+def template IdJumpExecute {{
+    Fault
+    %(class_name)s::execute(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+        %(op_rd)s;
+        %(code)s;
+        %(op_wb)s;
+        %(id_code)s;
         return NoFault;
     }
 
@@ -447,24 +557,26 @@ def template CSRExecute {{
     }
 }};
 
-def format ROp(code, *opt_flags) {{
-    iop = InstObjParams(name, Name, 'RegOp', code, opt_flags)
+def format ROp(code, id_code=';', *opt_flags) {{
+    iop = InstObjParams(name, Name, 'RegOp',
+        {'code': code, 'id_code': id_code}, opt_flags)
     header_output = BasicDeclare.subst(iop)
     decoder_output = BasicConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = BasicExecute.subst(iop)
+    exec_output = IdBasicExecute.subst(iop) \
+        if id_code else BasicExecute.subst(iop)
 }};
 
 def format IOp(code, imm_type='int64_t', imm_code='imm = sext<12>(IMM12);',
-              *opt_flags) {{
+              id_code=';', *opt_flags) {{
     regs = ['destRegIdx(0)','srcRegIdx(0)']
     iop = InstObjParams(name, Name, 'ImmOp<%s>' % imm_type,
-        {'imm_code': imm_code, 'code': code,
+        {'imm_code': imm_code, 'code': code, 'id_code': id_code,
          'regs': ','.join(regs)}, opt_flags)
     header_output = ImmDeclare.subst(iop)
     decoder_output = ImmConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = ImmExecute.subst(iop)
+    exec_output = IdImmExecute.subst(iop) if id_code else ImmExecute.subst(iop)
 }};
 
 def template DebugExecute {{
@@ -533,29 +645,30 @@ def format BOp(code, *opt_flags) {{
     exec_output = BranchExecute.subst(iop)
 }};
 
-def format Jump(code, *opt_flags) {{
+def format Jump(code, id_code=';', *opt_flags) {{
     regs = ['srcRegIdx(0)']
     iop = InstObjParams(name, Name, 'ImmOp<int64_t>',
         {'code': code, 'imm_code': 'imm = sext<12>(IMM12);',
-         'regs': ','.join(regs)}, opt_flags)
+         'id_code': id_code, 'regs': ','.join(regs)}, opt_flags)
     header_output = JumpDeclare.subst(iop)
     decoder_output = JumpConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = JumpExecute.subst(iop)
+    exec_output = IdJumpExecute.subst(iop) \
+        if id_code else JumpExecute.subst(iop)
 }};
 
-def format UOp(code, *opt_flags) {{
+def format UOp(code, id_code=';', *opt_flags) {{
     regs = ['destRegIdx(0)']
     iop = InstObjParams(name, Name, 'ImmOp<int64_t>',
         {'code': code, 'imm_code': 'imm = IMM20;',
-         'regs': ','.join(regs)}, opt_flags)
+         'id_code': id_code, 'regs': ','.join(regs)}, opt_flags)
     header_output = ImmDeclare.subst(iop)
     decoder_output = ImmConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = ImmExecute.subst(iop)
+    exec_output = IdImmExecute.subst(iop) if id_code else ImmExecute.subst(iop)
 }};
 
-def format JOp(code, *opt_flags) {{
+def format JOp(code, id_code=';', *opt_flags) {{
     imm_code = """
                 imm = UJIMMBITS10TO1 << 1   |
                       UJIMMBIT11 << 11      |
@@ -567,11 +680,12 @@ def format JOp(code, *opt_flags) {{
     regs = ['destRegIdx(0)']
     iop = InstObjParams(name, Name, 'ImmOp<int64_t>',
         {'code': code, 'imm_code': imm_code,
-         'regs': ','.join(regs)}, opt_flags)
+         'id_code': id_code, 'regs': ','.join(regs)}, opt_flags)
     header_output = BranchDeclare.subst(iop)
     decoder_output = JumpConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = BranchExecute.subst(iop)
+    exec_output = IdBranchExecute.subst(iop) \
+        if id_code else BranchExecute.subst(iop)
 }};
 
 def format SystemOp(code, *opt_flags) {{
