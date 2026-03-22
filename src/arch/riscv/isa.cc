@@ -32,7 +32,10 @@
 
 #include "arch/riscv/isa.hh"
 
+#include <array>
 #include <ctime>
+#include <iomanip>
+#include <iostream>
 #include <set>
 #include <sstream>
 
@@ -63,6 +66,7 @@
 #include "mem/request.hh"
 #include "params/RiscvISA.hh"
 #include "sim/pseudo_inst.hh"
+#include "sim/sim_exit.hh"
 
 namespace gem5
 {
@@ -72,219 +76,260 @@ namespace RiscvISA
 
 [[maybe_unused]]
 const std::array<const char *, NUM_MISCREGS> MiscRegNames = {{
-    [MISCREG_PRV]           = "PRV",
-    [MISCREG_ISA]           = "ISA",
-    [MISCREG_VENDORID]      = "VENDORID",
-    [MISCREG_ARCHID]        = "ARCHID",
-    [MISCREG_IMPID]         = "IMPID",
-    [MISCREG_HARTID]        = "HARTID",
-    [MISCREG_STATUS]        = "STATUS",
-    [MISCREG_IP]            = "IP",
-    [MISCREG_IE]            = "IE",
-    [MISCREG_CYCLE]         = "CYCLE",
-    [MISCREG_TIME]          = "TIME",
-    [MISCREG_INSTRET]       = "INSTRET",
-    [MISCREG_HPMCOUNTER03]  = "HPMCOUNTER03",
-    [MISCREG_HPMCOUNTER04]  = "HPMCOUNTER04",
-    [MISCREG_HPMCOUNTER05]  = "HPMCOUNTER05",
-    [MISCREG_HPMCOUNTER06]  = "HPMCOUNTER06",
-    [MISCREG_HPMCOUNTER07]  = "HPMCOUNTER07",
-    [MISCREG_HPMCOUNTER08]  = "HPMCOUNTER08",
-    [MISCREG_HPMCOUNTER09]  = "HPMCOUNTER09",
-    [MISCREG_HPMCOUNTER10]  = "HPMCOUNTER10",
-    [MISCREG_HPMCOUNTER11]  = "HPMCOUNTER11",
-    [MISCREG_HPMCOUNTER12]  = "HPMCOUNTER12",
-    [MISCREG_HPMCOUNTER13]  = "HPMCOUNTER13",
-    [MISCREG_HPMCOUNTER14]  = "HPMCOUNTER14",
-    [MISCREG_HPMCOUNTER15]  = "HPMCOUNTER15",
-    [MISCREG_HPMCOUNTER16]  = "HPMCOUNTER16",
-    [MISCREG_HPMCOUNTER17]  = "HPMCOUNTER17",
-    [MISCREG_HPMCOUNTER18]  = "HPMCOUNTER18",
-    [MISCREG_HPMCOUNTER19]  = "HPMCOUNTER19",
-    [MISCREG_HPMCOUNTER20]  = "HPMCOUNTER20",
-    [MISCREG_HPMCOUNTER21]  = "HPMCOUNTER21",
-    [MISCREG_HPMCOUNTER22]  = "HPMCOUNTER22",
-    [MISCREG_HPMCOUNTER23]  = "HPMCOUNTER23",
-    [MISCREG_HPMCOUNTER24]  = "HPMCOUNTER24",
-    [MISCREG_HPMCOUNTER25]  = "HPMCOUNTER25",
-    [MISCREG_HPMCOUNTER26]  = "HPMCOUNTER26",
-    [MISCREG_HPMCOUNTER27]  = "HPMCOUNTER27",
-    [MISCREG_HPMCOUNTER28]  = "HPMCOUNTER28",
-    [MISCREG_HPMCOUNTER29]  = "HPMCOUNTER29",
-    [MISCREG_HPMCOUNTER30]  = "HPMCOUNTER30",
-    [MISCREG_HPMCOUNTER31]  = "HPMCOUNTER31",
-    [MISCREG_HPMEVENT03]    = "HPMEVENT03",
-    [MISCREG_HPMEVENT04]    = "HPMEVENT04",
-    [MISCREG_HPMEVENT05]    = "HPMEVENT05",
-    [MISCREG_HPMEVENT06]    = "HPMEVENT06",
-    [MISCREG_HPMEVENT07]    = "HPMEVENT07",
-    [MISCREG_HPMEVENT08]    = "HPMEVENT08",
-    [MISCREG_HPMEVENT09]    = "HPMEVENT09",
-    [MISCREG_HPMEVENT10]    = "HPMEVENT10",
-    [MISCREG_HPMEVENT11]    = "HPMEVENT11",
-    [MISCREG_HPMEVENT12]    = "HPMEVENT12",
-    [MISCREG_HPMEVENT13]    = "HPMEVENT13",
-    [MISCREG_HPMEVENT14]    = "HPMEVENT14",
-    [MISCREG_HPMEVENT15]    = "HPMEVENT15",
-    [MISCREG_HPMEVENT16]    = "HPMEVENT16",
-    [MISCREG_HPMEVENT17]    = "HPMEVENT17",
-    [MISCREG_HPMEVENT18]    = "HPMEVENT18",
-    [MISCREG_HPMEVENT19]    = "HPMEVENT19",
-    [MISCREG_HPMEVENT20]    = "HPMEVENT20",
-    [MISCREG_HPMEVENT21]    = "HPMEVENT21",
-    [MISCREG_HPMEVENT22]    = "HPMEVENT22",
-    [MISCREG_HPMEVENT23]    = "HPMEVENT23",
-    [MISCREG_HPMEVENT24]    = "HPMEVENT24",
-    [MISCREG_HPMEVENT25]    = "HPMEVENT25",
-    [MISCREG_HPMEVENT26]    = "HPMEVENT26",
-    [MISCREG_HPMEVENT27]    = "HPMEVENT27",
-    [MISCREG_HPMEVENT28]    = "HPMEVENT28",
-    [MISCREG_HPMEVENT29]    = "HPMEVENT29",
-    [MISCREG_HPMEVENT30]    = "HPMEVENT30",
-    [MISCREG_HPMEVENT31]    = "HPMEVENT31",
-    [MISCREG_TSELECT]       = "TSELECT",
-    [MISCREG_TDATA1]        = "TDATA1",
-    [MISCREG_TDATA2]        = "TDATA2",
-    [MISCREG_TDATA3]        = "TDATA3",
-    [MISCREG_DCSR]          = "DCSR",
-    [MISCREG_DPC]           = "DPC",
-    [MISCREG_DSCRATCH]      = "DSCRATCH",
+    [MISCREG_PRV] = "PRV",
+    [MISCREG_ISA] = "ISA",
+    [MISCREG_VENDORID] = "VENDORID",
+    [MISCREG_ARCHID] = "ARCHID",
+    [MISCREG_IMPID] = "IMPID",
+    [MISCREG_HARTID] = "HARTID",
+    [MISCREG_STATUS] = "STATUS",
+    [MISCREG_IP] = "IP",
+    [MISCREG_IE] = "IE",
+    [MISCREG_CYCLE] = "CYCLE",
+    [MISCREG_TIME] = "TIME",
+    [MISCREG_INSTRET] = "INSTRET",
+    [MISCREG_HPMCOUNTER03] = "HPMCOUNTER03",
+    [MISCREG_HPMCOUNTER04] = "HPMCOUNTER04",
+    [MISCREG_HPMCOUNTER05] = "HPMCOUNTER05",
+    [MISCREG_HPMCOUNTER06] = "HPMCOUNTER06",
+    [MISCREG_HPMCOUNTER07] = "HPMCOUNTER07",
+    [MISCREG_HPMCOUNTER08] = "HPMCOUNTER08",
+    [MISCREG_HPMCOUNTER09] = "HPMCOUNTER09",
+    [MISCREG_HPMCOUNTER10] = "HPMCOUNTER10",
+    [MISCREG_HPMCOUNTER11] = "HPMCOUNTER11",
+    [MISCREG_HPMCOUNTER12] = "HPMCOUNTER12",
+    [MISCREG_HPMCOUNTER13] = "HPMCOUNTER13",
+    [MISCREG_HPMCOUNTER14] = "HPMCOUNTER14",
+    [MISCREG_HPMCOUNTER15] = "HPMCOUNTER15",
+    [MISCREG_HPMCOUNTER16] = "HPMCOUNTER16",
+    [MISCREG_HPMCOUNTER17] = "HPMCOUNTER17",
+    [MISCREG_HPMCOUNTER18] = "HPMCOUNTER18",
+    [MISCREG_HPMCOUNTER19] = "HPMCOUNTER19",
+    [MISCREG_HPMCOUNTER20] = "HPMCOUNTER20",
+    [MISCREG_HPMCOUNTER21] = "HPMCOUNTER21",
+    [MISCREG_HPMCOUNTER22] = "HPMCOUNTER22",
+    [MISCREG_HPMCOUNTER23] = "HPMCOUNTER23",
+    [MISCREG_HPMCOUNTER24] = "HPMCOUNTER24",
+    [MISCREG_HPMCOUNTER25] = "HPMCOUNTER25",
+    [MISCREG_HPMCOUNTER26] = "HPMCOUNTER26",
+    [MISCREG_HPMCOUNTER27] = "HPMCOUNTER27",
+    [MISCREG_HPMCOUNTER28] = "HPMCOUNTER28",
+    [MISCREG_HPMCOUNTER29] = "HPMCOUNTER29",
+    [MISCREG_HPMCOUNTER30] = "HPMCOUNTER30",
+    [MISCREG_HPMCOUNTER31] = "HPMCOUNTER31",
+    [MISCREG_HPMEVENT03] = "HPMEVENT03",
+    [MISCREG_HPMEVENT04] = "HPMEVENT04",
+    [MISCREG_HPMEVENT05] = "HPMEVENT05",
+    [MISCREG_HPMEVENT06] = "HPMEVENT06",
+    [MISCREG_HPMEVENT07] = "HPMEVENT07",
+    [MISCREG_HPMEVENT08] = "HPMEVENT08",
+    [MISCREG_HPMEVENT09] = "HPMEVENT09",
+    [MISCREG_HPMEVENT10] = "HPMEVENT10",
+    [MISCREG_HPMEVENT11] = "HPMEVENT11",
+    [MISCREG_HPMEVENT12] = "HPMEVENT12",
+    [MISCREG_HPMEVENT13] = "HPMEVENT13",
+    [MISCREG_HPMEVENT14] = "HPMEVENT14",
+    [MISCREG_HPMEVENT15] = "HPMEVENT15",
+    [MISCREG_HPMEVENT16] = "HPMEVENT16",
+    [MISCREG_HPMEVENT17] = "HPMEVENT17",
+    [MISCREG_HPMEVENT18] = "HPMEVENT18",
+    [MISCREG_HPMEVENT19] = "HPMEVENT19",
+    [MISCREG_HPMEVENT20] = "HPMEVENT20",
+    [MISCREG_HPMEVENT21] = "HPMEVENT21",
+    [MISCREG_HPMEVENT22] = "HPMEVENT22",
+    [MISCREG_HPMEVENT23] = "HPMEVENT23",
+    [MISCREG_HPMEVENT24] = "HPMEVENT24",
+    [MISCREG_HPMEVENT25] = "HPMEVENT25",
+    [MISCREG_HPMEVENT26] = "HPMEVENT26",
+    [MISCREG_HPMEVENT27] = "HPMEVENT27",
+    [MISCREG_HPMEVENT28] = "HPMEVENT28",
+    [MISCREG_HPMEVENT29] = "HPMEVENT29",
+    [MISCREG_HPMEVENT30] = "HPMEVENT30",
+    [MISCREG_HPMEVENT31] = "HPMEVENT31",
+    [MISCREG_TSELECT] = "TSELECT",
+    [MISCREG_TDATA1] = "TDATA1",
+    [MISCREG_TDATA2] = "TDATA2",
+    [MISCREG_TDATA3] = "TDATA3",
+    [MISCREG_DCSR] = "DCSR",
+    [MISCREG_DPC] = "DPC",
+    [MISCREG_DSCRATCH] = "DSCRATCH",
 
-    [MISCREG_MEDELEG]       = "MEDELEG",
-    [MISCREG_MIDELEG]       = "MIDELEG",
-    [MISCREG_MTVEC]         = "MTVEC",
-    [MISCREG_MCOUNTEREN]    = "MCOUNTEREN",
-    [MISCREG_MSCRATCH]      = "MSCRATCH",
-    [MISCREG_MEPC]          = "MEPC",
-    [MISCREG_MCAUSE]        = "MCAUSE",
-    [MISCREG_MTVAL]         = "MTVAL",
-    [MISCREG_PMPCFG0]       = "PMPCFG0",
-    [MISCREG_PMPCFG1]       = "PMPCFG1",   // pmpcfg1 is rv32 only
-    [MISCREG_PMPCFG2]       = "PMPCFG2",
-    [MISCREG_PMPCFG3]       = "PMPCFG3",   // pmpcfg3 is rv32 only
-    [MISCREG_PMPADDR00]     = "PMPADDR00",
-    [MISCREG_PMPADDR01]     = "PMPADDR01",
-    [MISCREG_PMPADDR02]     = "PMPADDR02",
-    [MISCREG_PMPADDR03]     = "PMPADDR03",
-    [MISCREG_PMPADDR04]     = "PMPADDR04",
-    [MISCREG_PMPADDR05]     = "PMPADDR05",
-    [MISCREG_PMPADDR06]     = "PMPADDR06",
-    [MISCREG_PMPADDR07]     = "PMPADDR07",
-    [MISCREG_PMPADDR08]     = "PMPADDR08",
-    [MISCREG_PMPADDR09]     = "PMPADDR09",
-    [MISCREG_PMPADDR10]     = "PMPADDR10",
-    [MISCREG_PMPADDR11]     = "PMPADDR11",
-    [MISCREG_PMPADDR12]     = "PMPADDR12",
-    [MISCREG_PMPADDR13]     = "PMPADDR13",
-    [MISCREG_PMPADDR14]     = "PMPADDR14",
-    [MISCREG_PMPADDR15]     = "PMPADDR15",
+    [MISCREG_MEDELEG] = "MEDELEG",
+    [MISCREG_MIDELEG] = "MIDELEG",
+    [MISCREG_MTVEC] = "MTVEC",
+    [MISCREG_MCOUNTEREN] = "MCOUNTEREN",
+    [MISCREG_MSCRATCH] = "MSCRATCH",
+    [MISCREG_MEPC] = "MEPC",
+    [MISCREG_MCAUSE] = "MCAUSE",
+    [MISCREG_MTVAL] = "MTVAL",
+    [MISCREG_PMPCFG0] = "PMPCFG0",
+    [MISCREG_PMPCFG1] = "PMPCFG1", // pmpcfg1 is rv32 only
+    [MISCREG_PMPCFG2] = "PMPCFG2",
+    [MISCREG_PMPCFG3] = "PMPCFG3", // pmpcfg3 is rv32 only
+    [MISCREG_PMPADDR00] = "PMPADDR00",
+    [MISCREG_PMPADDR01] = "PMPADDR01",
+    [MISCREG_PMPADDR02] = "PMPADDR02",
+    [MISCREG_PMPADDR03] = "PMPADDR03",
+    [MISCREG_PMPADDR04] = "PMPADDR04",
+    [MISCREG_PMPADDR05] = "PMPADDR05",
+    [MISCREG_PMPADDR06] = "PMPADDR06",
+    [MISCREG_PMPADDR07] = "PMPADDR07",
+    [MISCREG_PMPADDR08] = "PMPADDR08",
+    [MISCREG_PMPADDR09] = "PMPADDR09",
+    [MISCREG_PMPADDR10] = "PMPADDR10",
+    [MISCREG_PMPADDR11] = "PMPADDR11",
+    [MISCREG_PMPADDR12] = "PMPADDR12",
+    [MISCREG_PMPADDR13] = "PMPADDR13",
+    [MISCREG_PMPADDR14] = "PMPADDR14",
+    [MISCREG_PMPADDR15] = "PMPADDR15",
 
-    [MISCREG_RESERVED01]    = "",
-    [MISCREG_RESERVED02]    = "",
-    [MISCREG_STVEC]         = "STVEC",
-    [MISCREG_SCOUNTEREN]    = "SCOUNTEREN",
-    [MISCREG_SSCRATCH]      = "SSCRATCH",
-    [MISCREG_SEPC]          = "SEPC",
-    [MISCREG_SCAUSE]        = "SCAUSE",
-    [MISCREG_STVAL]         = "STVAL",
-    [MISCREG_SATP]          = "SATP",
-    [MISCREG_SENVCFG]       = "SENVCFG",
+    [MISCREG_RESERVED01] = "",
+    [MISCREG_RESERVED02] = "",
+    [MISCREG_STVEC] = "STVEC",
+    [MISCREG_SCOUNTEREN] = "SCOUNTEREN",
+    [MISCREG_SSCRATCH] = "SSCRATCH",
+    [MISCREG_SEPC] = "SEPC",
+    [MISCREG_SCAUSE] = "SCAUSE",
+    [MISCREG_STVAL] = "STVAL",
+    [MISCREG_SATP] = "SATP",
+    [MISCREG_SENVCFG] = "SENVCFG",
 
-    [MISCREG_RESERVED03]    = "",
-    [MISCREG_RESERVED04]    = "",
-    [MISCREG_RESERVED05]    = "",
-    [MISCREG_RESERVED06]    = "",
-    [MISCREG_RESERVED07]    = "",
-    [MISCREG_FFLAGS]        = "FFLAGS",
-    [MISCREG_FRM]           = "FRM",
+    [MISCREG_RESERVED03] = "",
+    [MISCREG_RESERVED04] = "",
+    [MISCREG_RESERVED05] = "",
+    [MISCREG_RESERVED06] = "",
+    [MISCREG_RESERVED07] = "",
+    [MISCREG_FFLAGS] = "FFLAGS",
+    [MISCREG_FRM] = "FRM",
 
-    [MISCREG_VSTART]        = "VSTART",
-    [MISCREG_VXSAT]         = "VXSAT",
-    [MISCREG_VXRM]          = "VXRM",
-    [MISCREG_VCSR]          = "VCSR",
-    [MISCREG_VL]            = "VL",
-    [MISCREG_VTYPE]         = "VTYPE",
-    [MISCREG_VLENB]         = "VLENB",
+    [MISCREG_VSTART] = "VSTART",
+    [MISCREG_VXSAT] = "VXSAT",
+    [MISCREG_VXRM] = "VXRM",
+    [MISCREG_VCSR] = "VCSR",
+    [MISCREG_VL] = "VL",
+    [MISCREG_VTYPE] = "VTYPE",
+    [MISCREG_VLENB] = "VLENB",
 
     // H-extension (RV64) registers
 
-    [MISCREG_HVIP]          = "HVIP",
+    [MISCREG_HVIP] = "HVIP",
 
-    [MISCREG_MTINST]        = "MTINST",
-    [MISCREG_MTVAL2]        = "MTVAL2",
+    [MISCREG_MTINST] = "MTINST",
+    [MISCREG_MTVAL2] = "MTVAL2",
 
-    [MISCREG_HSTATUS]       = "HSTATUS",
-    [MISCREG_HEDELEG]       = "HEDELEG",
-    [MISCREG_HIDELEG]       = "HIDELEG",
-    [MISCREG_HCOUNTEREN]    = "HCOUNTEREN",
-    [MISCREG_HGEIE]         = "HGEIE",
-    [MISCREG_HTVAL]         = "HTVAL",
-    [MISCREG_HTINST]        = "HTINST",
-    [MISCREG_HGEIP]         = "HGEIP",
+    [MISCREG_HSTATUS] = "HSTATUS",
+    [MISCREG_HEDELEG] = "HEDELEG",
+    [MISCREG_HIDELEG] = "HIDELEG",
+    [MISCREG_HCOUNTEREN] = "HCOUNTEREN",
+    [MISCREG_HGEIE] = "HGEIE",
+    [MISCREG_HTVAL] = "HTVAL",
+    [MISCREG_HTINST] = "HTINST",
+    [MISCREG_HGEIP] = "HGEIP",
 
-    [MISCREG_HENVCFG]       = "HENVCFG",
-    [MISCREG_HGATP]         = "HGATP",
-    [MISCREG_HCONTEXT]      = "HCONTEXT",
-    [MISCREG_HTIMEDELTA]    = "HTIMEDELTA",
+    [MISCREG_HENVCFG] = "HENVCFG",
+    [MISCREG_HGATP] = "HGATP",
+    [MISCREG_HCONTEXT] = "HCONTEXT",
+    [MISCREG_HTIMEDELTA] = "HTIMEDELTA",
 
-    [MISCREG_VSSTATUS]      = "VSSTATUS",
-    [MISCREG_VSTVEC]        = "VSTVEC",
-    [MISCREG_VSSCRATCH]     = "VSSCRATCH",
-    [MISCREG_VSEPC]         = "VSEPC",
-    [MISCREG_VSCAUSE]       = "VSCAUSE",
-    [MISCREG_VSTVAL]        = "VSTVAL",
-    [MISCREG_VSATP]         = "VSATP",
-    [MISCREG_VIRT]          = "VIRT",
+    [MISCREG_VSSTATUS] = "VSSTATUS",
+    [MISCREG_VSTVEC] = "VSTVEC",
+    [MISCREG_VSSCRATCH] = "VSSCRATCH",
+    [MISCREG_VSEPC] = "VSEPC",
+    [MISCREG_VSCAUSE] = "VSCAUSE",
+    [MISCREG_VSTVAL] = "VSTVAL",
+    [MISCREG_VSATP] = "VSATP",
+    [MISCREG_VIRT] = "VIRT",
 
     // H-extension (RV64) registers end here
 
-    [MISCREG_NMIVEC]        = "NMIVEC",
-    [MISCREG_NMIE]          = "NMIE",
-    [MISCREG_NMIP]          = "NMIP",
-    [MISCREG_MNSCRATCH]     = "MNSCRATCH",
-    [MISCREG_MNEPC]         = "MNEPC",
-    [MISCREG_MNCAUSE]       = "MNCAUSE",
-    [MISCREG_MNSTATUS]      = "MNSTATUS",
+    [MISCREG_NMIVEC] = "NMIVEC",
+    [MISCREG_NMIE] = "NMIE",
+    [MISCREG_NMIP] = "NMIP",
+    [MISCREG_MNSCRATCH] = "MNSCRATCH",
+    [MISCREG_MNEPC] = "MNEPC",
+    [MISCREG_MNCAUSE] = "MNCAUSE",
+    [MISCREG_MNSTATUS] = "MNSTATUS",
 
     // following are rv32 only registers
-    [MISCREG_MSTATUSH]      = "MSTATUSH",
+    [MISCREG_MSTATUSH] = "MSTATUSH",
 
-    [MISCREG_CYCLEH]         = "CYCLEH",
-    [MISCREG_TIMEH]          = "TIMEH",
-    [MISCREG_INSTRETH]       = "INSTRETH",
-    [MISCREG_HPMCOUNTER03H]  = "HPMCOUNTER03H",
-    [MISCREG_HPMCOUNTER04H]  = "HPMCOUNTER04H",
-    [MISCREG_HPMCOUNTER05H]  = "HPMCOUNTER05H",
-    [MISCREG_HPMCOUNTER06H]  = "HPMCOUNTER06H",
-    [MISCREG_HPMCOUNTER07H]  = "HPMCOUNTER07H",
-    [MISCREG_HPMCOUNTER08H]  = "HPMCOUNTER08H",
-    [MISCREG_HPMCOUNTER09H]  = "HPMCOUNTER09H",
-    [MISCREG_HPMCOUNTER10H]  = "HPMCOUNTER10H",
-    [MISCREG_HPMCOUNTER11H]  = "HPMCOUNTER11H",
-    [MISCREG_HPMCOUNTER12H]  = "HPMCOUNTER12H",
-    [MISCREG_HPMCOUNTER13H]  = "HPMCOUNTER13H",
-    [MISCREG_HPMCOUNTER14H]  = "HPMCOUNTER14H",
-    [MISCREG_HPMCOUNTER15H]  = "HPMCOUNTER15H",
-    [MISCREG_HPMCOUNTER16H]  = "HPMCOUNTER16H",
-    [MISCREG_HPMCOUNTER17H]  = "HPMCOUNTER17H",
-    [MISCREG_HPMCOUNTER18H]  = "HPMCOUNTER18H",
-    [MISCREG_HPMCOUNTER19H]  = "HPMCOUNTER19H",
-    [MISCREG_HPMCOUNTER20H]  = "HPMCOUNTER20H",
-    [MISCREG_HPMCOUNTER21H]  = "HPMCOUNTER21H",
-    [MISCREG_HPMCOUNTER22H]  = "HPMCOUNTER22H",
-    [MISCREG_HPMCOUNTER23H]  = "HPMCOUNTER23H",
-    [MISCREG_HPMCOUNTER24H]  = "HPMCOUNTER24H",
-    [MISCREG_HPMCOUNTER25H]  = "HPMCOUNTER25H",
-    [MISCREG_HPMCOUNTER26H]  = "HPMCOUNTER26H",
-    [MISCREG_HPMCOUNTER27H]  = "HPMCOUNTER27H",
-    [MISCREG_HPMCOUNTER28H]  = "HPMCOUNTER28H",
-    [MISCREG_HPMCOUNTER29H]  = "HPMCOUNTER29H",
-    [MISCREG_HPMCOUNTER30H]  = "HPMCOUNTER30H",
-    [MISCREG_HPMCOUNTER31H]  = "HPMCOUNTER31H",
+    [MISCREG_CYCLEH] = "CYCLEH",
+    [MISCREG_TIMEH] = "TIMEH",
+    [MISCREG_INSTRETH] = "INSTRETH",
+    [MISCREG_HPMCOUNTER03H] = "HPMCOUNTER03H",
+    [MISCREG_HPMCOUNTER04H] = "HPMCOUNTER04H",
+    [MISCREG_HPMCOUNTER05H] = "HPMCOUNTER05H",
+    [MISCREG_HPMCOUNTER06H] = "HPMCOUNTER06H",
+    [MISCREG_HPMCOUNTER07H] = "HPMCOUNTER07H",
+    [MISCREG_HPMCOUNTER08H] = "HPMCOUNTER08H",
+    [MISCREG_HPMCOUNTER09H] = "HPMCOUNTER09H",
+    [MISCREG_HPMCOUNTER10H] = "HPMCOUNTER10H",
+    [MISCREG_HPMCOUNTER11H] = "HPMCOUNTER11H",
+    [MISCREG_HPMCOUNTER12H] = "HPMCOUNTER12H",
+    [MISCREG_HPMCOUNTER13H] = "HPMCOUNTER13H",
+    [MISCREG_HPMCOUNTER14H] = "HPMCOUNTER14H",
+    [MISCREG_HPMCOUNTER15H] = "HPMCOUNTER15H",
+    [MISCREG_HPMCOUNTER16H] = "HPMCOUNTER16H",
+    [MISCREG_HPMCOUNTER17H] = "HPMCOUNTER17H",
+    [MISCREG_HPMCOUNTER18H] = "HPMCOUNTER18H",
+    [MISCREG_HPMCOUNTER19H] = "HPMCOUNTER19H",
+    [MISCREG_HPMCOUNTER20H] = "HPMCOUNTER20H",
+    [MISCREG_HPMCOUNTER21H] = "HPMCOUNTER21H",
+    [MISCREG_HPMCOUNTER22H] = "HPMCOUNTER22H",
+    [MISCREG_HPMCOUNTER23H] = "HPMCOUNTER23H",
+    [MISCREG_HPMCOUNTER24H] = "HPMCOUNTER24H",
+    [MISCREG_HPMCOUNTER25H] = "HPMCOUNTER25H",
+    [MISCREG_HPMCOUNTER26H] = "HPMCOUNTER26H",
+    [MISCREG_HPMCOUNTER27H] = "HPMCOUNTER27H",
+    [MISCREG_HPMCOUNTER28H] = "HPMCOUNTER28H",
+    [MISCREG_HPMCOUNTER29H] = "HPMCOUNTER29H",
+    [MISCREG_HPMCOUNTER30H] = "HPMCOUNTER30H",
+    [MISCREG_HPMCOUNTER31H] = "HPMCOUNTER31H",
 
     [MISCREG_JVT] = "JVT",
 
-    [MISCREG_FFLAGS_EXE]    = "FFLAGS_EXE",
+    [MISCREG_MKEYL] = "MKEYL",
+    [MISCREG_MKEYH] = "MKEYH",
+    [MISCREG_SKEYL] = "SKEYL",
+    [MISCREG_SKEYH] = "SKEYH",
+    [MISCREG_GPRID0] = "GPRID0",
+    [MISCREG_GPRID1] = "GPRID1",
+    [MISCREG_GPRID2] = "GPRID2",
+    [MISCREG_GPRID3] = "GPRID3",
+    [MISCREG_GPRID4] = "GPRID4",
+    [MISCREG_GPRID5] = "GPRID5",
+    [MISCREG_GPRID6] = "GPRID6",
+    [MISCREG_GPRID7] = "GPRID7",
+    [MISCREG_GPRID8] = "GPRID8",
+    [MISCREG_GPRID9] = "GPRID9",
+    [MISCREG_GPRID10] = "GPRID10",
+    [MISCREG_GPRID11] = "GPRID11",
+    [MISCREG_GPRID12] = "GPRID12",
+    [MISCREG_GPRID13] = "GPRID13",
+    [MISCREG_GPRID14] = "GPRID14",
+    [MISCREG_GPRID15] = "GPRID15",
+    [MISCREG_GPRID16] = "GPRID16",
+    [MISCREG_GPRID17] = "GPRID17",
+    [MISCREG_GPRID18] = "GPRID18",
+    [MISCREG_GPRID19] = "GPRID19",
+    [MISCREG_GPRID20] = "GPRID20",
+    [MISCREG_GPRID21] = "GPRID21",
+    [MISCREG_GPRID22] = "GPRID22",
+    [MISCREG_GPRID23] = "GPRID23",
+    [MISCREG_GPRID24] = "GPRID24",
+    [MISCREG_GPRID25] = "GPRID25",
+    [MISCREG_GPRID26] = "GPRID26",
+    [MISCREG_GPRID27] = "GPRID27",
+    [MISCREG_GPRID28] = "GPRID28",
+    [MISCREG_GPRID29] = "GPRID29",
+    [MISCREG_GPRID30] = "GPRID30",
+    [MISCREG_GPRID31] = "GPRID31",
+    [MISCREG_PCID] = "PCID",
+    [MISCREG_IDCSR] = "IDCSR",
+    [MISCREG_ENCMAP] = "ENCMAP",
+    [MISCREG_EXITRAW] = "EXITRAW",
+
+    [MISCREG_FFLAGS_EXE] = "FFLAGS_EXE",
 }};
 
 namespace
@@ -296,6 +341,33 @@ RegClass vecPredRegClass(VecPredRegClass, VecPredRegClassName, 0,
         debug::IntRegs);
 RegClass matRegClass(MatRegClass, MatRegClassName, 0, debug::MatRegs);
 RegClass ccRegClass(CCRegClass, CCRegClassName, 0, debug::IntRegs);
+
+constexpr std::array<uint64_t, 40> SigriscvDebugCsrs = {{
+    CSR_MKEYL,   CSR_MKEYH,   CSR_SKEYL,   CSR_SKEYH,   CSR_GPRID0,
+    CSR_GPRID1,  CSR_GPRID2,  CSR_GPRID3,  CSR_GPRID4,  CSR_GPRID5,
+    CSR_GPRID6,  CSR_GPRID7,  CSR_GPRID8,  CSR_GPRID9,  CSR_GPRID10,
+    CSR_GPRID11, CSR_GPRID12, CSR_GPRID13, CSR_GPRID14, CSR_GPRID15,
+    CSR_GPRID16, CSR_GPRID17, CSR_GPRID18, CSR_GPRID19, CSR_GPRID20,
+    CSR_GPRID21, CSR_GPRID22, CSR_GPRID23, CSR_GPRID24, CSR_GPRID25,
+    CSR_GPRID26, CSR_GPRID27, CSR_GPRID28, CSR_GPRID29, CSR_GPRID30,
+    CSR_GPRID31, CSR_PCID,    CSR_IDCSR,   CSR_ENCMAP,  CSR_EXITRAW,
+}};
+
+void
+printHexValue(std::ostream &os, RegVal value)
+{
+    std::ios old_state(nullptr);
+    old_state.copyfmt(os);
+    os << "0x" << std::hex << value;
+    os.copyfmt(old_state);
+}
+
+void
+printIdcsrFields(std::ostream &os, RegVal value)
+{
+    os << " puse=" << bits(value, 31, 31) << " use=" << bits(value, 30, 30)
+       << " idgen=" << bits(value, 23, 0);
+}
 
 } // anonymous namespace
 
@@ -1149,7 +1221,7 @@ ISA::tvmChecks(uint64_t csr, PrivilegeMode pm, ExtMachInst machInst)
 }
 
 RegVal
-ISA::backdoorReadCSRAllBits(ExecContext *xc, uint64_t csr)
+ISA::backdoorReadCSRAllBits(ExecContext *xc, uint64_t csr) const
 {
     auto csr_it = getCSRDataMap().find(csr);
 
@@ -1171,7 +1243,7 @@ ISA::backdoorReadCSRAllBits(ExecContext *xc, uint64_t csr)
 }
 
 RegVal
-ISA::readCSR(ExecContext *xc, uint64_t csr)
+ISA::readCSR(ExecContext *xc, uint64_t csr) const
 {
     auto csr_it = getCSRDataMap().find(csr);
 
@@ -1217,6 +1289,23 @@ ISA::readCSR(ExecContext *xc, uint64_t csr)
 
     return readval;
 }
+
+RegIndex
+ISA::gprIdMiscRegIndex(RegIndex int_reg_idx) const
+{
+    panic_if(int_reg_idx >= int_reg::NumArchRegs,
+             "Invalid integer register index %u for GPRID lookup",
+             int_reg_idx);
+    return MISCREG_GPRID0 + int_reg_idx;
+}
+
+RegVal
+ISA::readGprId(RegIndex int_reg_idx) const
+{ return readMiscRegNoEffect(gprIdMiscRegIndex(int_reg_idx)); }
+
+void
+ISA::writeGprId(RegIndex int_reg_idx, RegVal val)
+{ setMiscReg(gprIdMiscRegIndex(int_reg_idx), val); }
 
 void
 ISA::writeCSR(ExecContext *xc, uint64_t csr, RegVal writeData)
@@ -1324,6 +1413,74 @@ ISA::writeCSR(ExecContext *xc, uint64_t csr, RegVal writeData)
             xc->setMiscReg(midx, new_reg_data_all);
             break;
     }
+}
+
+void
+ISA::executeSigriscvDebug(ExecContext *xc, RegIndex src_reg_idx,
+                          RegVal src_val, int64_t imm) const
+{
+    auto *tc = xc->tcBase();
+    auto &out = std::cout;
+
+    auto printDebugCsr = [&](uint64_t csr) {
+        auto it = getCSRDataMap().find(csr);
+        if (it == getCSRDataMap().end()) {
+            out << "unknown csr";
+            return;
+        }
+
+        RegVal value = backdoorReadCSRAllBits(xc, csr);
+        out << it->second.name << "(";
+        printHexValue(out, csr);
+        out << ")=";
+        printHexValue(out, value);
+        if (csr == CSR_IDCSR) {
+            printIdcsrFields(out, value);
+        }
+    };
+
+    switch (imm) {
+        case 0:
+            out << "GPR dump\n";
+            for (int i = 0; i < int_reg::NumArchRegs; ++i) {
+                out << 'x' << i << " (" << int_reg::RegNames[i] << ") = ";
+                printHexValue(out, tc->getReg(intRegClass[i]));
+                out << " gprid=";
+                printHexValue(out, readGprId(i));
+                out << '\n';
+            }
+
+            out << "CSR dump\n";
+            for (auto csr : SigriscvDebugCsrs) {
+                printDebugCsr(csr);
+                out << '\n';
+            }
+            break;
+        case 1:
+            out << static_cast<char>(bits(src_val, 7, 0));
+            break;
+        case 2:
+            out << static_cast<int64_t>(src_val);
+            break;
+        case 3:
+            printHexValue(out, src_val);
+            out << " gprid=";
+            printHexValue(out, readGprId(src_reg_idx));
+            break;
+        case 4:
+            printDebugCsr(src_val);
+            out << '\n';
+            break;
+        case 5:
+            out.flush();
+            exitSimLoop("DEBUG imm=5");
+            return;
+        default:
+            out << "unknown debug imm " << imm << '\n';
+            break;
+    }
+
+    out.flush();
 }
 
 Addr

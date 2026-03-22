@@ -50,6 +50,7 @@ namespace gem5
 
 struct RiscvISAParams;
 class Checkpoint;
+class ExecContext;
 
 namespace RiscvISA
 {
@@ -223,9 +224,16 @@ class ISA : public BaseISA
     Fault hpmCounterCheck(int counter, ExtMachInst machInst) const;
     Fault tvmChecks(uint64_t csr, PrivilegeMode pm, ExtMachInst machInst);
 
-    RegVal backdoorReadCSRAllBits(ExecContext *xc, uint64_t csr);
-    RegVal readCSR(ExecContext *xc, uint64_t csr);
+    RegIndex gprIdMiscRegIndex(RegIndex int_reg_idx) const;
+    RegVal readGprId(RegIndex int_reg_idx) const;
+    void writeGprId(RegIndex int_reg_idx, RegVal val);
+
+    RegVal backdoorReadCSRAllBits(ExecContext *xc, uint64_t csr) const;
+    RegVal readCSR(ExecContext *xc, uint64_t csr) const;
     void writeCSR(ExecContext *xc, uint64_t csr, RegVal writeData);
+
+    void executeSigriscvDebug(ExecContext *xc, RegIndex src_reg_idx,
+                              RegVal src_val, int64_t imm) const;
 };
 
 // V-bit utilities (H-extension)

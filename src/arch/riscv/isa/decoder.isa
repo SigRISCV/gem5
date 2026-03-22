@@ -6488,6 +6488,17 @@ decode QUADRANT default Unknown::unknown() {
             }
         }
 
+        0x16: decode FUNCT3 {
+            format DebugOp {
+                0x7: debug({{
+                    auto isa = static_cast<RiscvISA::ISA*>(
+                        xc->tcBase()->getIsaPtr());
+                    isa->executeSigriscvDebug(
+                        xc, srcRegIdx(0).index(), Rs1, imm);
+                }});
+            }
+        }
+
         0x1e: M5Op::M5Op();
     }
 }
