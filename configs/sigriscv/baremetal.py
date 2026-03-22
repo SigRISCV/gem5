@@ -47,6 +47,8 @@ def build_system(args):
 
     system.workload = m5.objects.RiscvBareMetal()
     system.workload.bootloader = args.kernel
+    system.workload.remote_gdb_port = args.remote_gdb_port
+    system.workload.wait_for_remote_gdb = args.wait_gdb
 
     system.clk_domain = SrcClockDomain()
     system.clk_domain.clock = args.sys_clock
@@ -115,11 +117,29 @@ def main():
         default=100000,
         help="Simulation ticks to run; 0 means no limit",
     )
+    parser.add_argument(
+        "--remote-gdb-port",
+        type=int,
+        default=7000,
+        help="Remote GDB port for the FS bare-metal workload",
+    )
+    parser.add_argument(
+        "--wait-gdb",
+        action="store_true",
+        help="Wait for a remote GDB connection before starting execution",
+    )
     args = parser.parse_args()
 
     system = build_system(args)
     Root(full_system=True, system=system)
     m5.instantiate()
+
+    if args.wait_gdb:
+        print(
+            "Waiting for remote GDB connection on port {}".format(
+                args.remote_gdb_port
+            )
+        )
 
     if args.max_ticks > 0:
         exit_event = m5.simulate(args.max_ticks)
@@ -133,5 +153,4 @@ def main():
     )
 
 
-if __name__ == "__main__":
-    main()
+main()
