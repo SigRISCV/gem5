@@ -1308,6 +1308,66 @@ void
 ISA::writeGprId(RegIndex int_reg_idx, RegVal val)
 { setMiscReg(gprIdMiscRegIndex(int_reg_idx), val); }
 
+RegVal
+ISA::readPcid() const
+{ return readMiscRegNoEffect(MISCREG_PCID); }
+
+bool
+ISA::readIdCsrUse() const
+{ return bits(readMiscRegNoEffect(MISCREG_IDCSR), 30, 30); }
+
+bool
+ISA::readIdCsrPuse() const
+{ return bits(readMiscRegNoEffect(MISCREG_IDCSR), 31, 31); }
+
+bool
+ISA::shouldApplyIntIdSemantics(ExecContext *xc) const
+{
+    auto pm = static_cast<PrivilegeMode>(xc->readMiscReg(MISCREG_PRV));
+    return pm == PRV_U && readIdCsrUse();
+}
+
+void
+ISA::clearIntRegId(ExecContext *xc, RegIndex int_reg_idx)
+{
+    if (!shouldApplyIntIdSemantics(xc) || int_reg_idx == int_reg::_ZeroIdx) {
+        return;
+    }
+
+    writeGprId(int_reg_idx, 0);
+}
+
+void
+ISA::propagateIntRegIdFromRs1(ExecContext *xc, RegIndex src_reg_idx,
+                              RegIndex dst_reg_idx)
+{
+    if (!shouldApplyIntIdSemantics(xc) || dst_reg_idx == int_reg::_ZeroIdx) {
+        return;
+    }
+
+    writeGprId(dst_reg_idx, readGprId(src_reg_idx));
+}
+
+void
+ISA::propagatePcidToIntRegId(ExecContext *xc, RegIndex dst_reg_idx)
+{
+    if (!shouldApplyIntIdSemantics(xc) || dst_reg_idx == int_reg::_ZeroIdx) {
+        return;
+    }
+
+    writeGprId(dst_reg_idx, readPcid());
+}
+
+void
+ISA::writeIntRegIdImmediate(ExecContext *xc, RegIndex dst_reg_idx, RegVal id)
+{
+    if (!shouldApplyIntIdSemantics(xc) || dst_reg_idx == int_reg::_ZeroIdx) {
+        return;
+    }
+
+    writeGprId(dst_reg_idx, id);
+}
+
 void
 ISA::writeCSR(ExecContext *xc, uint64_t csr, RegVal writeData)
 {
@@ -1445,15 +1505,14 @@ ISA::executeSigriscvDebug(ExecContext *xc, RegIndex src_reg_idx,
             out << "GPR dump\n";
             for (int i = 0; i < int_reg::NumArchRegs; i += 4) {
                 for (int j = 0; j < 4; j++) {
-                    out << 'x' << i << " (" << int_reg::RegNames[i + j]
+                    out << 'x' << i + j << " (" << int_reg::RegNames[i + j]
                         << ") = ";
                     printHexValue(out, tc->getReg(intRegClass[i + j]));
                     out << '\t';
                 }
                 out << '\n';
                 for (int j = 0; j < 4; j++) {
-                    out << 'x' << i << " (" << int_reg::RegNames[i + j]
-                        << ") = ";
+                    out << 'gprid' << i + j << " = ";
                     printHexValue(out, readGprId(i + j));
                     out << '\t';
                 }
