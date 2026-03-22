@@ -230,6 +230,8 @@ class ISA : public BaseISA
     RegVal readPcid() const;
     bool readIdCsrUse() const;
     bool readIdCsrPuse() const;
+    RegVal readIdCsrIdgen() const;
+    void writeIdCsrIdgen(RegVal idgen);
     bool shouldApplyIntIdSemantics(ExecContext *xc) const;
     void clearIntRegId(ExecContext *xc, RegIndex int_reg_idx);
     void propagateIntRegIdFromRs1(ExecContext *xc, RegIndex src_reg_idx,
@@ -237,6 +239,7 @@ class ISA : public BaseISA
     void propagatePcidToIntRegId(ExecContext *xc, RegIndex dst_reg_idx);
     void writeIntRegIdImmediate(ExecContext *xc, RegIndex dst_reg_idx,
                                 RegVal id);
+    void allocateIntRegNewId(ExecContext *xc, RegIndex dst_reg_idx);
 
     RegVal backdoorReadCSRAllBits(ExecContext *xc, uint64_t csr) const;
     RegVal readCSR(ExecContext *xc, uint64_t csr) const;

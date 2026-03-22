@@ -6558,6 +6558,13 @@ decode QUADRANT default Unknown::unknown() {
                     xc->tcBase()->getIsaPtr());
                 isa->writeIntRegIdImmediate(xc, destRegIdx(0).index(), 1);
             }});
+            0x3: IOp::setnewid({{
+                Rd_sd = rvSext(Rs1_sd + imm);
+            }}, id_code = {{
+                auto isa = static_cast<RiscvISA::ISA*>(
+                    xc->tcBase()->getIsaPtr());
+                isa->allocateIntRegNewId(xc, destRegIdx(0).index());
+            }});
             0x6: IOp::setrawid({{
                 Rd_sd = rvSext(Rs1_sd + imm);
             }}, id_code = {{

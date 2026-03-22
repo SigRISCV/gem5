@@ -1320,6 +1320,19 @@ bool
 ISA::readIdCsrPuse() const
 { return bits(readMiscRegNoEffect(MISCREG_IDCSR), 31, 31); }
 
+RegVal
+ISA::readIdCsrIdgen() const
+{ return bits(readMiscRegNoEffect(MISCREG_IDCSR), 23, 0); }
+
+void
+ISA::writeIdCsrIdgen(RegVal idgen)
+{
+    constexpr RegVal idMask = mask(24);
+    RegVal idcsr = readMiscRegNoEffect(MISCREG_IDCSR);
+    idcsr = (idcsr & ~idMask) | (idgen & idMask);
+    setMiscReg(MISCREG_IDCSR, idcsr);
+}
+
 bool
 ISA::shouldApplyIntIdSemantics(ExecContext *xc) const
 {
@@ -1366,6 +1379,32 @@ ISA::writeIntRegIdImmediate(ExecContext *xc, RegIndex dst_reg_idx, RegVal id)
     }
 
     writeGprId(dst_reg_idx, id);
+}
+
+void
+ISA::allocateIntRegNewId(ExecContext *xc, RegIndex dst_reg_idx)
+{
+    if (!shouldApplyIntIdSemantics(xc)) {
+        return;
+    }
+
+    constexpr RegVal idMask = mask(24);
+
+    auto normalizeIdgen = [idMask](RegVal value) {
+        value &= idMask;
+        if (value <= 2) {
+            return RegVal(3);
+        }
+        return value;
+    };
+
+    RegVal allocatedId = normalizeIdgen(readIdCsrIdgen());
+    RegVal nextId = normalizeIdgen((allocatedId + 1) & idMask);
+
+    if (dst_reg_idx != int_reg::_ZeroIdx) {
+        writeGprId(dst_reg_idx, allocatedId);
+    }
+    writeIdCsrIdgen(nextId);
 }
 
 void
