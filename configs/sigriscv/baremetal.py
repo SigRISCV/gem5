@@ -1,6 +1,11 @@
 import argparse
 
 import m5
+from m5 import (
+    debug,
+    event,
+    trace,
+)
 from m5.objects import *
 
 CPU_TYPES = {
@@ -124,6 +129,22 @@ def main():
         help="Remote GDB port for the FS bare-metal workload",
     )
     parser.add_argument(
+        "--debug-flags",
+        default="",
+        help="Comma-separated debug flags, e.g. MinorSigriscv,MinorExecute",
+    )
+    parser.add_argument(
+        "--debug-file",
+        default="",
+        help="Write debug output to this file instead of the default sink",
+    )
+    parser.add_argument(
+        "--debug-start",
+        type=int,
+        default=0,
+        help="Enable debug output starting at this tick",
+    )
+    parser.add_argument(
         "--wait-gdb",
         action="store_true",
         help="Wait for a remote GDB connection before starting execution",
@@ -133,6 +154,23 @@ def main():
     system = build_system(args)
     Root(full_system=True, system=system)
     m5.instantiate()
+
+    debug_flags = [
+        flag.strip() for flag in args.debug_flags.split(",") if flag.strip()
+    ]
+    for flag in debug_flags:
+        if flag not in debug.flags:
+            print(f"invalid debug flag '{flag}'")
+            continue
+        debug.flags[flag].enable()
+
+    if args.debug_file:
+        trace.output(args.debug_file)
+
+    if args.debug_start > 0:
+        trace.disable()
+        e = event.create(trace.enable, event.Event.Debug_Enable_Pri)
+        event.mainq.schedule(e, args.debug_start)
 
     if args.wait_gdb:
         print(
