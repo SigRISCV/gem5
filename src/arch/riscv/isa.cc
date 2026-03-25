@@ -46,6 +46,7 @@
 #include "arch/riscv/pagetable.hh"
 #include "arch/riscv/pcstate.hh"
 #include "arch/riscv/pmp.hh"
+#include "arch/riscv/qarma.hh"
 #include "arch/riscv/regs/float.hh"
 #include "arch/riscv/regs/int.hh"
 #include "arch/riscv/regs/misc.hh"
@@ -342,7 +343,7 @@ RegClass vecPredRegClass(VecPredRegClass, VecPredRegClassName, 0,
 RegClass matRegClass(MatRegClass, MatRegClassName, 0, debug::MatRegs);
 RegClass ccRegClass(CCRegClass, CCRegClassName, 0, debug::IntRegs);
 
-constexpr std::array<uint64_t, 8> SigriscvDebugCsrs = {{
+constexpr std::array<uint64_t, 16> SigriscvDebugCsrs = {{
     CSR_MKEYL,
     CSR_MKEYH,
     CSR_SKEYL,
@@ -351,6 +352,14 @@ constexpr std::array<uint64_t, 8> SigriscvDebugCsrs = {{
     CSR_IDCSR,
     CSR_ENCMAP,
     CSR_EXITRAW,
+    CSR_MTVEC,
+    CSR_MEPC,
+    CSR_MCAUSE,
+    CSR_MTVAL,
+    CSR_STVEC,
+    CSR_SEPC,
+    CSR_SCAUSE,
+    CSR_STVAL,
 }};
 
 void
@@ -1340,6 +1349,68 @@ ISA::shouldApplyIntIdSemantics(ExecContext *xc) const
     return pm == PRV_U && readIdCsrUse();
 }
 
+bool
+ISA::shouldApplyLsSsSemantics(ExecContext *xc) const
+{
+    auto pm = static_cast<PrivilegeMode>(xc->readMiscReg(MISCREG_PRV));
+    return pm != PRV_U || readIdCsrUse();
+}
+
+RegVal
+ISA::readLsSsKeyLow(ExecContext *xc) const
+{
+    auto pm = static_cast<PrivilegeMode>(xc->readMiscReg(MISCREG_PRV));
+    return readMiscRegNoEffect(pm == PRV_U ? MISCREG_SKEYL : MISCREG_MKEYL);
+}
+
+RegVal
+ISA::readLsSsKeyHigh(ExecContext *xc) const
+{
+    auto pm = static_cast<PrivilegeMode>(xc->readMiscReg(MISCREG_PRV));
+    return readMiscRegNoEffect(pm == PRV_U ? MISCREG_SKEYH : MISCREG_MKEYH);
+}
+
+RegVal
+ISA::buildLsSsTweak(ExecContext *xc, RegIndex base_reg_idx, Addr addr) const
+{
+    constexpr RegVal valueMask = mask(40);
+    constexpr RegVal idMask = mask(24);
+
+    auto pm = static_cast<PrivilegeMode>(xc->readMiscReg(MISCREG_PRV));
+    RegVal regId = (pm == PRV_U) ? (readGprId(base_reg_idx) & idMask) : 0;
+    return (regId << 40) | (addr & valueMask);
+}
+
+RegVal
+ISA::packLsSsPlain(ExecContext *xc, RegVal data_val,
+                   RegIndex data_reg_idx) const
+{
+    constexpr RegVal valueMask = mask(40);
+    constexpr RegVal idMask = mask(24);
+
+    auto pm = static_cast<PrivilegeMode>(xc->readMiscReg(MISCREG_PRV));
+    RegVal regId = (pm == PRV_U) ? (readGprId(data_reg_idx) & idMask) : 0;
+    return (pm == PRV_U) ? (regId << 40) | (data_val & valueMask) : data_val;
+}
+
+RegVal
+ISA::finishLsResult(ExecContext *xc, RegIndex dst_reg_idx, RegVal result)
+{
+    constexpr RegVal ptrMask = mask(40);
+    constexpr RegVal idMask = mask(24);
+    RegVal val;
+
+    auto pm = static_cast<PrivilegeMode>(xc->readMiscReg(MISCREG_PRV));
+    if (pm == PRV_U && dst_reg_idx != int_reg::_ZeroIdx) {
+        writeGprId(dst_reg_idx, (result >> 40) & idMask);
+        val = sext<40>(result & ptrMask);
+    } else {
+        val = result;
+    }
+
+    return val;
+}
+
 void
 ISA::clearIntRegId(ExecContext *xc, RegIndex int_reg_idx)
 {
@@ -1551,7 +1622,7 @@ ISA::executeSigriscvDebug(ExecContext *xc, RegIndex src_reg_idx,
                 }
                 out << '\n';
                 for (int j = 0; j < 4; j++) {
-                    out << 'gprid' << i + j << " = ";
+                    out << "gprid" << i + j << " = ";
                     printHexValue(out, readGprId(i + j));
                     out << '\t';
                 }

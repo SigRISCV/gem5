@@ -102,6 +102,7 @@ output exec {{
 #include "arch/riscv/faults.hh"
 #include "arch/riscv/fp_inst.hh"
 #include "arch/riscv/mmu.hh"
+#include "arch/riscv/qarma.hh"
 #include "arch/riscv/reg_abi.hh"
 #include "arch/riscv/regs/float.hh"
 #include "arch/riscv/regs/misc.hh"

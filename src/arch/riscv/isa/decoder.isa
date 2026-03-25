@@ -534,41 +534,62 @@ decode QUADRANT default Unknown::unknown() {
             }
         }
     }
-    0x3: decode OPCODE5 {
-        0x00: decode FUNCT3 {
-            format Load {
-                0x0: lb({{
-                    Rd_sd = Mem_sb;
+        0x3: decode OPCODE5 {
+            0x00: decode FUNCT3 {
+                format Load {
+                    0x0: lb({{
+                        Rd_sd = Mem_sb;
+                        auto isa = static_cast<RiscvISA::ISA*>(
+                            xc->tcBase()->getIsaPtr());
+                        isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
                 0x1: lh({{
                     Rd_sd = Mem_sh;
+                    auto isa = static_cast<RiscvISA::ISA*>(
+                        xc->tcBase()->getIsaPtr());
+                    isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
                 0x2: lw({{
                     Rd_sd = Mem_sw;
+                    auto isa = static_cast<RiscvISA::ISA*>(
+                        xc->tcBase()->getIsaPtr());
+                    isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
                 0x3: decode RVTYPE {
                     0x1: ld({{
                         Rd_sd = Mem_sd;
+                        auto isa = static_cast<RiscvISA::ISA*>(
+                            xc->tcBase()->getIsaPtr());
+                        isa->clearIntRegId(xc, destRegIdx(0).index());
                     }});
                 }
                 0x4: lbu({{
                     Rd = Mem_ub;
+                    auto isa = static_cast<RiscvISA::ISA*>(
+                        xc->tcBase()->getIsaPtr());
+                    isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
                 0x5: lhu({{
                     Rd = Mem_uh;
+                    auto isa = static_cast<RiscvISA::ISA*>(
+                        xc->tcBase()->getIsaPtr());
+                    isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
-                0x6: decode RVTYPE {
-                    0x1: lwu({{
-                        Rd = Mem_uw;
-                    }});
+                    0x6: decode RVTYPE {
+                        0x1: lwu({{
+                            Rd = Mem_uw;
+                            auto isa = static_cast<RiscvISA::ISA*>(
+                                xc->tcBase()->getIsaPtr());
+                            isa->clearIntRegId(xc, destRegIdx(0).index());
+                        }});
+                    }
                 }
             }
-        }
 
-        0x01: decode FUNCT3 {
-            format Load {
-                0x1: flh({{
-                    bool set_dirty = true;
+            0x01: decode FUNCT3 {
+                format Load {
+                    0x1: flh({{
+                        bool set_dirty = true;
                     Fault fault = updateFPUStatus(xc, machInst, set_dirty);
                     if (fault != NoFault) { return fault; }
 
@@ -1342,6 +1363,29 @@ decode QUADRANT default Unknown::unknown() {
                     IsSquashAfter, No_OpClass);
             }
 
+            format Load {
+                0x3: decode RVTYPE {
+                    0x1: ls({{
+                        auto isa = static_cast<RiscvISA::ISA*>(
+                            xc->tcBase()->getIsaPtr());
+                        if (!isa->shouldApplyLsSsSemantics(xc)) {
+                            Rd_sd = Mem_sd;
+                        } else {
+                            Addr ea = rvSext(Rs1 + offset);
+                            RegVal tweak = isa->buildLsSsTweak(
+                                xc, machInst.rs1, ea);
+                            RegVal keyl = isa->readLsSsKeyLow(xc);
+                            RegVal keyh = isa->readLsSsKeyHigh(xc);
+                            RegVal result = qarma64_dec(
+                                static_cast<RegVal>(Mem_sd),
+                                tweak, keyl, keyh, 7);
+                            Rd_sd = isa->finishLsResult(
+                                xc, destRegIdx(0).index(), result);
+                        }
+                    }});
+                }
+            }
+
             0x2: decode RD {
                 0x0: decode FUNCT12 {
                     format CBMOp {
@@ -1771,6 +1815,25 @@ decode QUADRANT default Unknown::unknown() {
                 0x3: decode RVTYPE {
                     0x1: sd({{
                         Mem_ud = Rs2_ud;
+                    }});
+                }
+                0x5: decode RVTYPE {
+                    0x1: ss({{
+                        auto isa = static_cast<RiscvISA::ISA*>(
+                            xc->tcBase()->getIsaPtr());
+                        if (!isa->shouldApplyLsSsSemantics(xc)) {
+                            Mem_ud = Rs2_ud;
+                        } else {
+                            Addr ea = rvSext(Rs1 + offset);
+                            RegVal tweak = isa->buildLsSsTweak(
+                                xc, machInst.rs1, ea);
+                            RegVal keyl = isa->readLsSsKeyLow(xc);
+                            RegVal keyh = isa->readLsSsKeyHigh(xc);
+                            RegVal plain = isa->packLsSsPlain(
+                                xc, Rs2_ud, machInst.rs2);
+                            Mem_ud = qarma64_enc(
+                                plain, tweak, keyl, keyh, 7);
+                        }
                     }});
                 }
             }
