@@ -161,32 +161,30 @@
 难度：低到中。
 改动模块数估计：3 到 5 个。
 
-### 阶段 4：MinorCPU 的 ID 伴随数据流
+### 阶段 4：MinorCPU 的 ID 功能正确实现
+
+详细设计与当前实现结论见 `design-doc/stage4-design.md`。
 
 目标：
-1. 把功能语义下沉到时序顺序流水线。
-2. 不影响普通指令时序，只在流水寄存器旁带 metadata。
+1. 在 `MinorCPU` 上保证 `gprid/pcid/idgen/use` 的功能语义正确。
+2. 复用 `Minor` 现有 `issue/FU/LSQ/commit` 时序模型，不额外引入 ID companion 流水线。
 
 功能：
-1. `rs1_id/rs2_id/rd_id/pc_id/use_snapshot` 进入动态指令。
-2. decode、scoreboard、execute、writeback 路径携带 ID。
-3. flush/branch recovery 时 GPRID 与 PCID 可回滚。
+1. 对 `setrawid/setdummyid/setnewid/add/sub/addi/auipc/jal/jalr` 等指令，直接在 commit 阶段执行现有 ISA helper。
+2. 依赖 Minor 的顺序提交语义，让 younger 指令在执行时直接读到 older 指令已经提交后的最终架构态 ID。
+3. 让 branch、trap、fault、squash 场景下未提交指令天然不污染架构态 ID。
 
 开发模块：
-1. `cpu/minor/dyn_inst.hh`：新增 ID 字段。
-2. `cpu/minor/pipe_data.hh`：在 stage 间增加 metadata。
-3. `cpu/minor/decode.*`：生成目标 ID 更新意图。
-4. `cpu/minor/execute.*`：在写回时提交 GPRID/PCID。
-5. `cpu/minor/scoreboard.*`：必要时扩展对 ID-ready 的跟踪。
-6. `cpu/minor/fetch1.*`、`fetch2.*`：携带 `pcid/use` 控制态。
+1. `arch/riscv/isa.hh` 与 `arch/riscv/isa.cc`：继续作为 ID 语义唯一后端。
+2. `cpu/minor/exec_context.hh`：继续提供 commit-stage 的标准执行上下文。
+3. `cpu/minor/execute.cc`：复用 `commitInst()` 中 `staticInst->execute()` 作为 ID 语义真正生效点。
 
 测试：
-1. 前递路径下 ID 不丢。
-2. squash 后 ID 不污染。
-3. 普通程序 CPI 不应明显变化。
+1. `stage4_minor_forward.S`：验证 `setnewid`、`setdummyid/setrawid` 和整数链式传播。
+2. `stage4_minor_flush.S`：验证 branch、jalr、ecall、illegal、load fault、nested redirect 下只有已提交 ID 更新生效。
 
-难度：高。
-改动模块数估计：8 到 12 个。
+难度：中到高。
+改动模块数估计：3 到 5 个。
 
 ### 阶段 5：LS/SS 功能版与 QARMA helper
 
