@@ -188,6 +188,14 @@
 
 ### 阶段 5：LS/SS 功能版与 QARMA helper
 
+详细设计与本次实现记录见 `design-doc/stage5-design.md`。
+
+当前状态：
+1. 设计完成。
+2. 首版实现已落地到 `arch/riscv` 与 baremetal 测试。
+3. 静态构建验证已完成，运行级验证仍建议补一轮。
+4. 本轮迭代的实现细节、边界语义与验证结论已经回写到 `design-doc/stage5-design.md`。
+
 目标：
 1. 先在 simple CPU 跑通 `LS/SS` 语义。
 2. 确认密钥、ID 选择、40-bit 地址重建规则无歧义。

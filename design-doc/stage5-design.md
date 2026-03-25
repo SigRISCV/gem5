@@ -354,7 +354,89 @@ stage5 并不推翻这条结论，因为：
    1. `REG[x0]` 仍为 0
    2. `GPRID0` 不被 `LS` 覆盖
 
-## 8. 预估改动范围
+## 8. 本次迭代的实现记录
+
+截至本次迭代，stage5 已经完成“设计 + 首版代码落地”。这里记录最终采用的实现方案，而不是仅记录开发前计划。
+
+这一节的目的，是把阶段 5 在本轮开发中的最终代码形态、边界语义和验证状态都固定进文档，作为后续 stage6 继续演进时的设计基线。
+
+### 8.1 已实际落地的文件
+
+本次迭代实际落地到以下文件：
+
+1. `repo/gem5/src/arch/riscv/qarma.hh`
+2. `repo/gem5/src/arch/riscv/qarma.cc`
+3. `repo/gem5/src/arch/riscv/SConscript`
+4. `repo/gem5/src/arch/riscv/isa.hh`
+5. `repo/gem5/src/arch/riscv/isa.cc`
+6. `repo/gem5/src/arch/riscv/isa/decoder.isa`
+7. `benchmark/simple-sigriscv-test/gem5_test/tests/stage5_ls_ss.S`
+
+### 8.2 本次迭代最终采用的 helper 划分
+
+和最初文档里的“建议 helper 列表”相比，这次实现最终收敛为下面这组实际 helper：
+
+1. `shouldApplyLsSsSemantics()`
+2. `readLsSsKeyLow()`
+3. `readLsSsKeyHigh()`
+4. `buildLsSsValueWithId()`
+5. `buildLsSsTweak()`
+6. `packLsSsPlain()`
+7. `finishLsResult()`
+
+其中最重要的收敛点有三个：
+
+1. `buildLsSsValueWithId()` 作为共享 helper，统一负责“高 24 位取 `GPRID[idx]` 还是取 `0`，低 40 位取 value”的拼接逻辑。
+2. `buildLsSsTweak()` 复用这个共享 helper 来构造 `{id_or_0, addr[39:0]}`。
+3. `packLsSsPlain()` 也复用这个共享 helper 来构造 `{id_or_0, REG[rs2][39:0]}`。
+
+这样可以避免 tweak 和 plain 两条路径各自维护一份 privilege 判定。
+
+### 8.3 本次迭代固定下来的行为细节
+
+除了最初 stage5 文档中已经确定的算法外，这次实现还把下面这些边界行为真正固定进代码了：
+
+1. `LS/SS` 的 `use` 判定单独走 `shouldApplyLsSsSemantics()`，不复用阶段 2/3/4 的 `shouldApplyIntIdSemantics()`。
+2. 在 U 态 `use=1` 时，7 条基础 load 指令 `lb/lh/lw/ld/lbu/lhu/lwu` 会像 `slli/andi` 一样清空 `rd.gprid`。
+3. `LS` 在 U 态 `use=1` 时会按 `result[63:40]` 更新 `GPRID[rd]`；在 S/M 态不更新 `GPRID[rd]`。
+4. `LS` 的数据部分始终返回 `sext(result[39:0])`。
+5. `rd=x0` 时，`LS` 不修改 `GPRID0`。
+
+这意味着 stage5 现在的 ID 行为已经不是“只有 `LS/SS` 自己工作”，而是把和它们直接相关的基础 load 清空规则也一并补齐到了当前实现里。
+
+### 8.4 编码与接入位置的最终实现
+
+本次迭代中，实际接入位置已经确定为：
+
+1. `LS` 接在 gem5 RISC-V decoder 的 `MISC_MEM` 分支。
+2. `SS` 接在 gem5 RISC-V decoder 的普通 `STORE` 分支。
+3. `QARMA` 以独立 `qarma.hh/cc` 文件接入，并通过 `SConscript` 纳入编译。
+
+这和最早“可能放在 `mem.isa` 或 custom mem format” 的计划相比更明确：
+
+1. 访存执行模型仍然复用 gem5 现有 load/store 路径。
+2. 但 decode 位置完全以当前 LLVM XSig 编码基线为准，而不是最早架构草案里的统一 custom opcode。
+
+### 8.5 本次迭代的验证状态
+
+本次迭代已完成的验证包括：
+
+1. `benchmark/simple-sigriscv-test/gem5_test/tests/stage5_ls_ss.S` 可以成功组装、链接并生成 `.elf/.dump/.bin`。
+2. 反汇编中可以直接看到 `ls` 与 `ss` 指令编码已经按当前工具链基线生成。
+3. RISC-V ISA 生成代码与相关 C++ 编译路径已经通过一轮构建。
+
+本次迭代尚未完全闭合的验证是：
+
+1. 由于本地生成的 `repo/gem5/build/RISCV/gem5.opt` 在当次环境里出现异常产物，stage5 的 baremetal 运行结果没有在本次迭代中完整记录下来。
+
+因此，当前文档应把 stage5 的状态表述为：
+
+1. 设计完成。
+2. 首版代码实现完成。
+3. 静态构建验证完成。
+4. 运行级验证仍建议在可执行的 gem5 二进制环境下再补一轮。
+
+## 9. 预估改动范围
 
 如果按这份设计推进，阶段 5 预计主要改动 6 到 9 个模块：
 
@@ -368,7 +450,7 @@ stage5 并不推翻这条结论，因为：
 8. `benchmark/simple-sigriscv-test/gem5_test/tests/stage5_ls_ss_u_mode.S`
 9. `benchmark/simple-sigriscv-test/gem5_test/tests/stage5_ls_ss_s_mode.S`
 
-## 9. 本阶段的审查重点
+## 10. 本阶段的审查重点
 
 在真正开始写代码前，我建议你先重点审核下面五点：
 
