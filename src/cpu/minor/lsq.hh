@@ -190,6 +190,22 @@ class LSQ : public Named
 
         LSQRequestState state;
 
+        /** True when this request is an LS using extended semantics and
+         *  therefore needs an extra response-side timing hold. */
+        bool sigriscvLsPath;
+
+        /** True when this request is an SS using extended semantics and
+         *  therefore needs store-side crypto timing. */
+        bool sigriscvSsPath;
+
+        /** Earliest cycle at which a completed LS response may be exposed
+         *  to Execute::commit.  0 means no extra hold. */
+        Cycles responseReadyCycle;
+
+        /** Earliest cycle at which an SS may issue its memory write.
+         *  0 means no extra hold. */
+        Cycles cryptoReadyCycle;
+
       protected:
         /** BaseMMU::Translation interface */
         void markDelayed() { isTranslationDelayed = true; }

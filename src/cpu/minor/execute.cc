@@ -60,6 +60,20 @@ namespace gem5
 namespace minor
 {
 
+namespace
+{
+
+constexpr Cycles SigriscvCryptoDelay(3);
+
+bool
+isSigriscvLsIssuePath(const MinorDynInstPtr &inst)
+{
+    return inst && inst->isInst() && inst->staticInst->isLoad() &&
+           inst->staticInst->getName() == "ls";
+}
+
+} // namespace
+
 Execute::Execute(const std::string &name_, MinorCPU &cpu_,
                  const BaseMinorCPUParams &params,
                  Latch<ForwardInstData>::Output inp_,
@@ -544,6 +558,7 @@ Execute::issue(ThreadID thread_id)
 {
     const ForwardInstData *insts_in = getInput(thread_id);
     ExecuteThreadInfo &thread = executeInfo[thread_id];
+    ThreadContext *thread_context = cpu.getContext(thread_id);
 
     /* Early termination if we have no instructions */
     if (!insts_in)
@@ -573,9 +588,7 @@ Execute::issue(ThreadID thread_id)
         if (inst->isBubble()) {
             /* Skip */
             issued = true;
-        } else if (cpu.getContext(thread_id)->status() ==
-            ThreadContext::Suspended)
-        {
+        } else if (thread_context->status() == ThreadContext::Suspended) {
             DPRINTF(MinorExecute, "Discarding inst: %s from suspended"
                 " thread\n", *inst);
 
@@ -667,10 +680,10 @@ Execute::issue(ThreadID thread_id)
                         DPRINTF(MinorExecute, "Can't issue inst: %s as extra"
                             " decoding is suppressing it\n",
                             *inst);
-                    } else if (!scoreboard[thread_id].canInstIssue(inst,
-                        src_latencies, cant_forward_from_fu_indices,
-                        cpu.curCycle(), cpu.getContext(thread_id)))
-                    {
+                    } else if (!scoreboard[thread_id].canInstIssue(
+                                   inst, src_latencies,
+                                   cant_forward_from_fu_indices,
+                                   cpu.curCycle(), thread_context)) {
                         DPRINTF(MinorExecute, "Can't issue inst: %s yet\n",
                             *inst);
                     } else {
@@ -708,6 +721,10 @@ Execute::issue(ThreadID thread_id)
 
                         issued_mem_ref = inst->isMemRef();
 
+                        if (issued_mem_ref && isSigriscvLsIssuePath(inst)) {
+                            extra_assumed_lat += SigriscvCryptoDelay;
+                        }
+
                         QueuedInst fu_inst(inst);
 
                         /* Decorate the inst with FU details */
@@ -722,8 +739,8 @@ Execute::issue(ThreadID thread_id)
                              *  early */
                             if (allowEarlyMemIssue) {
                                 inst->instToWaitFor =
-                                    scoreboard[thread_id].execSeqNumToWaitFor(inst,
-                                        cpu.getContext(thread_id));
+                                    scoreboard[thread_id].execSeqNumToWaitFor(
+                                        inst, thread_context);
 
                                 if (lsq.getLastMemBarrier(thread_id) >
                                     inst->instToWaitFor)
@@ -766,11 +783,11 @@ Execute::issue(ThreadID thread_id)
 
                         /* Mark the destinations for this instruction as
                          *  busy */
-                        scoreboard[thread_id].markupInstDests(inst, cpu.curCycle() +
-                            fu->description.opLat +
-                            extra_dest_retire_lat +
-                            extra_assumed_lat,
-                            cpu.getContext(thread_id),
+                        scoreboard[thread_id].markupInstDests(
+                            inst,
+                            cpu.curCycle() + fu->description.opLat +
+                                extra_dest_retire_lat + extra_assumed_lat,
+                            thread_context,
                             issued_mem_ref && extra_assumed_lat == Cycles(0));
 
                         /* Push the instruction onto the inFlight queue so

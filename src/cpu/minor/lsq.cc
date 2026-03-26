@@ -39,7 +39,8 @@
 
 #include <iomanip>
 #include <sstream>
-
+#include "arch/riscv/isa.hh"
+#include "arch/riscv/regs/misc.hh"
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -56,20 +57,60 @@ namespace gem5
 namespace minor
 {
 
+namespace
+{
+
+constexpr Cycles SigriscvCryptoDelay(3);
+
+bool
+isSigriscvLsInst(const MinorDynInstPtr &inst)
+{
+    return inst && inst->isInst() && inst->staticInst->isLoad() &&
+           inst->staticInst->getName() == "ls";
+}
+
+bool
+isSigriscvSsInst(const MinorDynInstPtr &inst)
+{
+    return inst && inst->isInst() && inst->staticInst->isStore() &&
+           inst->staticInst->getName() == "ss";
+}
+
+bool
+usesSigriscvLsSsSemantics(ThreadContext *thread)
+{
+    auto *isa = dynamic_cast<RiscvISA::ISA *>(thread->getIsaPtr());
+
+    if (!isa) {
+        return false;
+    }
+
+    auto pm = static_cast<RiscvISA::PrivilegeMode>(
+        thread->readMiscRegNoEffect(RiscvISA::MISCREG_PRV));
+
+    return pm != RiscvISA::PRV_U || isa->readIdCsrUse();
+}
+
+} // namespace
+
 LSQ::LSQRequest::LSQRequest(LSQ &port_, MinorDynInstPtr inst_, bool isLoad_,
-        PacketDataPtr data_, uint64_t *res_) :
-    SenderState(),
-    port(port_),
-    inst(inst_),
-    isLoad(isLoad_),
-    data(data_),
-    packet(NULL),
-    request(),
-    res(res_),
-    skipped(false),
-    issuedToMemory(false),
-    isTranslationDelayed(false),
-    state(NotIssued)
+                            PacketDataPtr data_, uint64_t *res_)
+    : SenderState(),
+      port(port_),
+      inst(inst_),
+      isLoad(isLoad_),
+      data(data_),
+      packet(NULL),
+      request(),
+      res(res_),
+      skipped(false),
+      issuedToMemory(false),
+      isTranslationDelayed(false),
+      state(NotIssued),
+      sigriscvLsPath(false),
+      sigriscvSsPath(false),
+      responseReadyCycle(0),
+      cryptoReadyCycle(0)
 {
     request = std::make_shared<Request>();
 }
@@ -888,9 +929,16 @@ LSQ::StoreBuffer::step()
             if (request->isBarrier() && request->isComplete()) {
                 /* Give up at barriers */
                 issued = false;
+            } else if (request->sigriscvSsPath &&
+                       lsq.cpu.curCycle() < request->cryptoReadyCycle) {
+                DPRINTF(MinorMem,
+                        "SS store buffer request waiting for"
+                        " crypto pipeline for %d more cycles before issuing"
+                        " to memory\n",
+                        request->cryptoReadyCycle - lsq.cpu.curCycle());
+                issued = false;
             } else if (!(request->state == LSQRequest::StoreBufferIssuing &&
-                request->sentAllPackets()))
-            {
+                         request->sentAllPackets())) {
                 DPRINTF(MinorMem, "Trying to send request: %s to memory"
                     " system\n", *(request->inst));
 
@@ -992,6 +1040,10 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
             " queue\n", (request->isComplete() ? "completed" : "failed"));
         request->setState(LSQRequest::Complete);
         request->setSkipped();
+        if (request->isLoad && request->sigriscvLsPath &&
+            request->responseReadyCycle == Cycles(0)) {
+            request->responseReadyCycle = cpu.curCycle() + SigriscvCryptoDelay;
+        }
         moveFromRequestsToTransfers(request);
         return;
     }
@@ -1046,6 +1098,15 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
             DPRINTF(MinorMem, "Moving store into transfers queue\n");
             return;
         }
+    }
+
+    if (!is_load && request->sigriscvSsPath && !bufferable &&
+        cpu.curCycle() < request->cryptoReadyCycle) {
+        DPRINTF(MinorMem,
+                "SS request waiting for crypto pipeline for %d"
+                " more cycles before issuing to memory\n",
+                request->cryptoReadyCycle - cpu.curCycle());
+        return;
     }
 
     // Process store conditionals or store release after all previous
@@ -1166,6 +1227,9 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
         }
     } else {
         request->setState(LSQRequest::Complete);
+        if (request->isLoad && request->sigriscvLsPath) {
+            request->responseReadyCycle = cpu.curCycle() + SigriscvCryptoDelay;
+        }
         moveFromRequestsToTransfers(request);
     }
 }
@@ -1208,10 +1272,15 @@ LSQ::tryToSend(LSQRequestPtr request)
                     *(request->inst));
             }
 
-            if (ret)
+            if (ret) {
                 request->setState(LSQRequest::Complete);
-            else
+                if (request->isLoad && request->sigriscvLsPath) {
+                    request->responseReadyCycle =
+                        cpu.curCycle() + SigriscvCryptoDelay;
+                }
+            } else {
                 request->setState(LSQRequest::RequestIssuing);
+            }
         } else if (dcachePort.sendTimingReq(packet)) {
             DPRINTF(MinorMem, "Sent data memory request\n");
 
@@ -1315,6 +1384,11 @@ LSQ::recvTimingResp(PacketPtr response)
       case LSQRequest::RequestNeedsRetry:
         /* Response to a request from the transfers queue */
         request->retireResponse(response);
+
+        if (request->isLoad && request->isComplete() &&
+            request->sigriscvLsPath) {
+            request->responseReadyCycle = cpu.curCycle() + SigriscvCryptoDelay;
+        }
 
         DPRINTF(MinorMem, "Has outstanding packets?: %d %d\n",
             request->hasPacketsInMemSystem(), request->isComplete());
@@ -1497,11 +1571,18 @@ LSQ::findResponse(MinorDynInstPtr inst)
             bool can_store = storeBuffer.canInsert();
             bool to_store_buffer = request->state ==
                 LSQRequest::StoreToStoreBuffer;
+            bool load_ready = !request->isLoad ||
+                              request->responseReadyCycle == Cycles(0) ||
+                              request->responseReadyCycle <= cpu.curCycle();
 
-            if ((complete && !(request->isBarrier() && !can_store)) ||
-                (to_store_buffer && can_store))
-            {
+            if (((complete && load_ready) &&
+                 !(request->isBarrier() && !can_store)) ||
+                (to_store_buffer && can_store)) {
                 ret = request;
+            } else if (complete && request->isLoad && !load_ready) {
+                /* Keep Execute awake until the delayed LS response reaches
+                 * its crypto-ready point. */
+                cpu.activityRecorder->activity();
             }
         }
     }
@@ -1634,6 +1715,18 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
     } else {
         request = new SingleDataRequest(
             *this, inst, isLoad, request_data, res);
+    }
+
+    ThreadContext *thread = cpu.getContext(inst->id.threadId);
+    const bool use_lsss_semantics = usesSigriscvLsSsSemantics(thread);
+
+    request->sigriscvLsPath =
+        isLoad && isSigriscvLsInst(inst) && use_lsss_semantics;
+    request->sigriscvSsPath =
+        !isLoad && isSigriscvSsInst(inst) && use_lsss_semantics;
+
+    if (request->sigriscvSsPath) {
+        request->cryptoReadyCycle = cpu.curCycle() + SigriscvCryptoDelay;
     }
 
     if (inst->traceData)
