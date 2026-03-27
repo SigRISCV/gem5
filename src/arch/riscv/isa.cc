@@ -1321,6 +1321,43 @@ RegVal
 ISA::readPcid() const
 { return readMiscRegNoEffect(MISCREG_PCID); }
 
+RegVal
+ISA::readEncmap() const
+{ return bits(readMiscRegNoEffect(MISCREG_ENCMAP), 31, 0); }
+
+void
+ISA::writeEncmap(RegVal val)
+{ setMiscReg(MISCREG_ENCMAP, bits(val, 31, 0)); }
+
+bool
+ISA::readEncmapBit(RegIndex int_reg_idx) const
+{
+    if (int_reg_idx >= 32) {
+        return false;
+    }
+
+    return bits(readEncmap(), int_reg_idx, int_reg_idx);
+}
+
+void
+ISA::updateEncmapBit(RegIndex int_reg_idx, bool encrypted)
+{
+    if (int_reg_idx >= 32) {
+        return;
+    }
+
+    RegVal encmap = readEncmap();
+    const RegVal bit = RegVal(1) << int_reg_idx;
+
+    if (encrypted) {
+        encmap |= bit;
+    } else {
+        encmap &= ~bit;
+    }
+
+    writeEncmap(encmap);
+}
+
 bool
 ISA::readIdCsrUse() const
 { return bits(readMiscRegNoEffect(MISCREG_IDCSR), 30, 30); }

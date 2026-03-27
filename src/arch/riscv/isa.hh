@@ -228,6 +228,10 @@ class ISA : public BaseISA
     RegVal readGprId(RegIndex int_reg_idx) const;
     void writeGprId(RegIndex int_reg_idx, RegVal val);
     RegVal readPcid() const;
+    RegVal readEncmap() const;
+    void writeEncmap(RegVal val);
+    bool readEncmapBit(RegIndex int_reg_idx) const;
+    void updateEncmapBit(RegIndex int_reg_idx, bool encrypted);
     bool readIdCsrUse() const;
     bool readIdCsrPuse() const;
     RegVal readIdCsrIdgen() const;
