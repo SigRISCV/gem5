@@ -37,9 +37,11 @@
 
 #include "cpu/minor/lsq.hh"
 
+#include <algorithm>
 #include <iomanip>
 #include <sstream>
 #include "arch/riscv/isa.hh"
+#include "arch/riscv/regs/int.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "base/compiler.hh"
 #include "base/logging.hh"
@@ -70,10 +72,40 @@ isSigriscvLsInst(const MinorDynInstPtr &inst)
 }
 
 bool
+isSigriscvLsMapInst(const MinorDynInstPtr &inst)
+{
+    return inst && inst->isInst() && inst->staticInst->isLoad() &&
+           inst->staticInst->getName() == "ls_map";
+}
+
+bool
+isSigriscvLsEncmapInst(const MinorDynInstPtr &inst)
+{
+    return isSigriscvLsMapInst(inst) && inst->staticInst->numDestRegs() > 0 &&
+           inst->staticInst->destRegIdx(0).index() ==
+               RiscvISA::int_reg::_ZeroIdx;
+}
+
+bool
 isSigriscvSsInst(const MinorDynInstPtr &inst)
 {
     return inst && inst->isInst() && inst->staticInst->isStore() &&
            inst->staticInst->getName() == "ss";
+}
+
+bool
+isSigriscvSsIdInst(const MinorDynInstPtr &inst)
+{
+    return inst && inst->isInst() && inst->staticInst->isStore() &&
+           inst->staticInst->getName() == "ss_id";
+}
+
+bool
+isSigriscvSsEncmapInst(const MinorDynInstPtr &inst)
+{
+    return isSigriscvSsIdInst(inst) && inst->staticInst->numSrcRegs() > 1 &&
+           inst->staticInst->srcRegIdx(1).index() ==
+               RiscvISA::int_reg::_ZeroIdx;
 }
 
 bool
@@ -108,7 +140,12 @@ LSQ::LSQRequest::LSQRequest(LSQ &port_, MinorDynInstPtr inst_, bool isLoad_,
       isTranslationDelayed(false),
       state(NotIssued),
       sigriscvLsPath(false),
+      sigriscvLsMapPath(false),
+      sigriscvLsEncmapPath(false),
       sigriscvSsPath(false),
+      sigriscvSsIdPath(false),
+      sigriscvSsEncmapPath(false),
+      sigriscvResponsePrepared(false),
       responseReadyCycle(0),
       cryptoReadyCycle(0)
 {
@@ -1040,10 +1077,6 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
             " queue\n", (request->isComplete() ? "completed" : "failed"));
         request->setState(LSQRequest::Complete);
         request->setSkipped();
-        if (request->isLoad && request->sigriscvLsPath &&
-            request->responseReadyCycle == Cycles(0)) {
-            request->responseReadyCycle = cpu.curCycle() + SigriscvCryptoDelay;
-        }
         moveFromRequestsToTransfers(request);
         return;
     }
@@ -1227,9 +1260,6 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
         }
     } else {
         request->setState(LSQRequest::Complete);
-        if (request->isLoad && request->sigriscvLsPath) {
-            request->responseReadyCycle = cpu.curCycle() + SigriscvCryptoDelay;
-        }
         moveFromRequestsToTransfers(request);
     }
 }
@@ -1274,10 +1304,6 @@ LSQ::tryToSend(LSQRequestPtr request)
 
             if (ret) {
                 request->setState(LSQRequest::Complete);
-                if (request->isLoad && request->sigriscvLsPath) {
-                    request->responseReadyCycle =
-                        cpu.curCycle() + SigriscvCryptoDelay;
-                }
             } else {
                 request->setState(LSQRequest::RequestIssuing);
             }
@@ -1385,11 +1411,6 @@ LSQ::recvTimingResp(PacketPtr response)
         /* Response to a request from the transfers queue */
         request->retireResponse(response);
 
-        if (request->isLoad && request->isComplete() &&
-            request->sigriscvLsPath) {
-            request->responseReadyCycle = cpu.curCycle() + SigriscvCryptoDelay;
-        }
-
         DPRINTF(MinorMem, "Has outstanding packets?: %d %d\n",
             request->hasPacketsInMemSystem(), request->isComplete());
 
@@ -1473,30 +1494,32 @@ LSQ::recvReqRetry()
     }
 }
 
-LSQ::LSQ(std::string name_, std::string dcache_port_name_,
-    MinorCPU &cpu_, Execute &execute_,
-    unsigned int in_memory_system_limit, unsigned int line_width,
-    unsigned int requests_queue_size, unsigned int transfers_queue_size,
-    unsigned int store_buffer_size,
-    unsigned int store_buffer_cycle_store_limit) :
-    Named(name_),
-    cpu(cpu_),
-    execute(execute_),
-    dcachePort(dcache_port_name_, *this, cpu_),
-    lastMemBarrier(cpu.numThreads, 0),
-    state(MemoryRunning),
-    inMemorySystemLimit(in_memory_system_limit),
-    lineWidth((line_width == 0 ? cpu.cacheLineSize() : line_width)),
-    requests(name_ + ".requests", "addr", requests_queue_size),
-    transfers(name_ + ".transfers", "addr", transfers_queue_size),
-    storeBuffer(name_ + ".storeBuffer",
-        *this, store_buffer_size, store_buffer_cycle_store_limit),
-    numAccessesInMemorySystem(0),
-    numAccessesInDTLB(0),
-    numStoresInTransfers(0),
-    numAccessesIssuedToMemory(0),
-    retryRequest(NULL),
-    cacheBlockMask(~(cpu_.cacheLineSize() - 1))
+LSQ::LSQ(std::string name_, std::string dcache_port_name_, MinorCPU &cpu_,
+         Execute &execute_, unsigned int in_memory_system_limit,
+         unsigned int line_width, unsigned int requests_queue_size,
+         unsigned int transfers_queue_size, unsigned int store_buffer_size,
+         unsigned int store_buffer_cycle_store_limit)
+    : Named(name_),
+      cpu(cpu_),
+      execute(execute_),
+      dcachePort(dcache_port_name_, *this, cpu_),
+      lastMemBarrier(cpu.numThreads, 0),
+      state(MemoryRunning),
+      inMemorySystemLimit(in_memory_system_limit),
+      lineWidth((line_width == 0 ? cpu.cacheLineSize() : line_width)),
+      requests(name_ + ".requests", "addr", requests_queue_size),
+      transfers(name_ + ".transfers", "addr", transfers_queue_size),
+      storeBuffer(name_ + ".storeBuffer", *this, store_buffer_size,
+                  store_buffer_cycle_store_limit),
+      numAccessesInMemorySystem(0),
+      numAccessesInDTLB(0),
+      numStoresInTransfers(0),
+      numAccessesIssuedToMemory(0),
+      retryRequest(NULL),
+      sigriscvShadowEncmap(cpu.numThreads, 0),
+      sigriscvShadowEncmapValid(cpu.numThreads, false),
+      sigriscvDecryptPipeNextIssueCycle(cpu.numThreads, Cycles(0)),
+      cacheBlockMask(~(cpu_.cacheLineSize() - 1))
 {
     if (in_memory_system_limit < 1) {
         fatal("%s: executeMaxAccessesInMemory must be >= 1 (%d)\n", name_,
@@ -1530,6 +1553,62 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
 
 LSQ::~LSQ()
 { }
+
+void
+LSQ::prepareSigriscvLoadResponse(LSQRequestPtr request)
+{
+    if (!request->isLoad || request->sigriscvResponsePrepared ||
+        !request->isComplete() || !request->packet) {
+        return;
+    }
+
+    ThreadID tid = request->inst->id.threadId;
+    ThreadContext *thread = cpu.getContext(tid);
+    auto *isa = dynamic_cast<RiscvISA::ISA *>(thread->getIsaPtr());
+
+    request->sigriscvResponsePrepared = true;
+
+    if (!isa) {
+        return;
+    }
+
+    const bool use_semantics = usesSigriscvLsSsSemantics(thread);
+
+    if (!(request->sigriscvLsPath || request->sigriscvLsMapPath) ||
+        !use_semantics) {
+        return;
+    }
+
+    if (request->sigriscvLsEncmapPath && use_semantics) {
+        RegVal encmap = 0;
+        std::memcpy(
+            &encmap, request->packet->getConstPtr<uint8_t>(),
+            std::min<size_t>(sizeof(encmap), request->packet->getSize()));
+        encmap = bits(encmap, 31, 0);
+        sigriscvShadowEncmap[tid] = encmap;
+        sigriscvShadowEncmapValid[tid] = true;
+        isa->writeEncmap(encmap);
+        return;
+    }
+
+    bool needs_decrypt = request->sigriscvLsPath;
+
+    if (request->sigriscvLsMapPath) {
+        RegIndex rd_idx = request->inst->staticInst->destRegIdx(0).index();
+        RegVal encmap = sigriscvShadowEncmapValid[tid]
+                            ? sigriscvShadowEncmap[tid]
+                            : isa->readEncmap();
+        needs_decrypt = rd_idx != RiscvISA::int_reg::_ZeroIdx &&
+                        bits(encmap, rd_idx, rd_idx);
+    }
+
+    if (needs_decrypt) {
+        Cycles start_cycle =
+            std::max(cpu.curCycle(), sigriscvDecryptPipeNextIssueCycle[tid]);
+        request->responseReadyCycle = start_cycle + SigriscvCryptoDelay;
+        sigriscvDecryptPipeNextIssueCycle[tid] = start_cycle + Cycles(1);
+    }
+}
 
 LSQ::LSQRequest::~LSQRequest()
 {
@@ -1567,6 +1646,10 @@ LSQ::findResponse(MinorDynInstPtr inst)
         /* Same instruction and complete access or a store that's
          *  capable of being moved to the store buffer */
         if (request->inst->id == inst->id) {
+            if (request->isLoad && request->isComplete()) {
+                prepareSigriscvLoadResponse(request);
+            }
+
             bool complete = request->isComplete();
             bool can_store = storeBuffer.canInsert();
             bool to_store_buffer = request->state ==
@@ -1722,8 +1805,16 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
 
     request->sigriscvLsPath =
         isLoad && isSigriscvLsInst(inst) && use_lsss_semantics;
+    request->sigriscvLsMapPath =
+        isLoad && isSigriscvLsMapInst(inst) && use_lsss_semantics;
+    request->sigriscvLsEncmapPath =
+        isLoad && isSigriscvLsEncmapInst(inst) && use_lsss_semantics;
     request->sigriscvSsPath =
         !isLoad && isSigriscvSsInst(inst) && use_lsss_semantics;
+    request->sigriscvSsIdPath =
+        !isLoad && isSigriscvSsIdInst(inst) && use_lsss_semantics;
+    request->sigriscvSsEncmapPath =
+        !isLoad && isSigriscvSsEncmapInst(inst) && use_lsss_semantics;
 
     if (request->sigriscvSsPath) {
         request->cryptoReadyCycle = cpu.curCycle() + SigriscvCryptoDelay;

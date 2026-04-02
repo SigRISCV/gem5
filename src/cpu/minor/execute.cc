@@ -37,8 +37,11 @@
 
 #include "cpu/minor/execute.hh"
 
+#include <cstring>
 #include <functional>
 
+#include "arch/riscv/isa.hh"
+#include "arch/riscv/regs/int.hh"
 #include "cpu/minor/cpu.hh"
 #include "cpu/minor/exec_context.hh"
 #include "cpu/minor/fetch1.hh"
@@ -70,6 +73,31 @@ isSigriscvLsIssuePath(const MinorDynInstPtr &inst)
 {
     return inst && inst->isInst() && inst->staticInst->isLoad() &&
            inst->staticInst->getName() == "ls";
+}
+
+bool
+isSigriscvSsIdInst(const MinorDynInstPtr &inst)
+{
+    return inst && inst->isInst() && inst->staticInst->isStore() &&
+           inst->staticInst->getName() == "ss_id";
+}
+
+bool
+isSigriscvSsEncmapInst(const MinorDynInstPtr &inst)
+{
+    return isSigriscvSsIdInst(inst) && inst->staticInst->numSrcRegs() > 1 &&
+           inst->staticInst->srcRegIdx(1).index() ==
+               RiscvISA::int_reg::_ZeroIdx;
+}
+
+void
+writeSigriscvStorePayload(PacketPtr packet, RegVal payload)
+{
+    if (!packet || packet->getSize() < sizeof(payload)) {
+        return;
+    }
+
+    std::memcpy(packet->getPtr<uint8_t>(), &payload, sizeof(payload));
 }
 
 } // namespace
@@ -401,6 +429,26 @@ Execute::handleMemResponse(MinorDynInstPtr inst,
                 fault->name());
             fault->invoke(thread, inst->staticInst);
         } else {
+            auto *isa = dynamic_cast<RiscvISA::ISA *>(thread->getIsaPtr());
+
+            if (isa && response->needsToBeSentToStoreBuffer() &&
+                isSigriscvSsIdInst(inst) &&
+                isa->shouldApplyLsSsSemantics(&context)) {
+                RegIndex rs2_idx = inst->staticInst->srcRegIdx(1).index();
+
+                if (isSigriscvSsEncmapInst(inst)) {
+                    writeSigriscvStorePayload(packet, isa->readEncmap());
+                } else {
+                    RegVal gprid = isa->readGprId(rs2_idx);
+
+                    if (gprid == 0) {
+                        isa->updateEncmapBit(rs2_idx, false);
+                    } else {
+                        isa->updateEncmapBit(rs2_idx, true);
+                    }
+                }
+            }
+
             /* Stores need to be pushed into the store buffer to finish
              *  them off */
             if (response->needsToBeSentToStoreBuffer())
@@ -472,6 +520,13 @@ Execute::executeMemRefInst(MinorDynInstPtr inst, BranchData &branch,
     } else {
         ThreadContext *thread = cpu.getContext(inst->id.threadId);
         std::unique_ptr<PCStateBase> old_pc(thread->pcState().clone());
+        auto *isa = dynamic_cast<RiscvISA::ISA *>(thread->getIsaPtr());
+        RegVal old_encmap = 0;
+        bool restore_encmap = isa && isSigriscvSsIdInst(inst);
+
+        if (restore_encmap) {
+            old_encmap = isa->readEncmap();
+        }
 
         ExecContext context(cpu, *cpu.threads[inst->id.threadId], *this, inst);
 
@@ -479,6 +534,10 @@ Execute::executeMemRefInst(MinorDynInstPtr inst, BranchData &branch,
 
         Fault init_fault = inst->staticInst->initiateAcc(&context,
             inst->traceData);
+
+        if (restore_encmap) {
+            isa->writeEncmap(old_encmap);
+        }
 
         if (inst->inLSQ) {
             if (init_fault != NoFault) {

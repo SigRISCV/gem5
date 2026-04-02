@@ -194,9 +194,25 @@ class LSQ : public Named
          *  therefore needs an extra response-side timing hold. */
         bool sigriscvLsPath;
 
+        /** True when this request is an LS.MAP using extended semantics. */
+        bool sigriscvLsMapPath;
+
+        /** True when this request is an LS.ENCMAP (`ls.map x0, ...`). */
+        bool sigriscvLsEncmapPath;
+
         /** True when this request is an SS using extended semantics and
          *  therefore needs store-side crypto timing. */
         bool sigriscvSsPath;
+
+        /** True when this request is an SS.ID using extended semantics. */
+        bool sigriscvSsIdPath;
+
+        /** True when this request is an SS.ENCMAP (`ss.id x0, ...`). */
+        bool sigriscvSsEncmapPath;
+
+        /** Has the response-ready side of LS.MAP/LS.ENCMAP already been
+         *  prepared? */
+        bool sigriscvResponsePrepared;
 
         /** Earliest cycle at which a completed LS response may be exposed
          *  to Execute::commit.  0 means no extra hold. */
@@ -634,10 +650,22 @@ class LSQ : public Named
      *  currently waiting have its memory access retried */
     LSQRequestPtr retryRequest;
 
+    /** Most recently restored ENCMAP value per thread for the
+     *  `ls.encmap -> ls.map*` restore sequence. */
+    std::vector<RegVal> sigriscvShadowEncmap;
+
+    /** Valid bit for the shadow ENCMAP. */
+    std::vector<bool> sigriscvShadowEncmapValid;
+
+    /** Shared decrypt pipeline next-issue cycle per thread. */
+    std::vector<Cycles> sigriscvDecryptPipeNextIssueCycle;
+
     /** Address Mask for a cache block (e.g. ~(cache_block_size-1)) */
     Addr cacheBlockMask;
 
   protected:
+    void prepareSigriscvLoadResponse(LSQRequestPtr request);
+
     /** Try and issue a memory access for a translated request at the
      *  head of the requests queue.  Also tries to move the request
      *  between queues */
