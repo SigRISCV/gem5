@@ -6680,6 +6680,15 @@ decode QUADRANT default Unknown::unknown() {
                     xc->tcBase()->getIsaPtr());
                 isa->allocateIntRegNewId(xc, destRegIdx(0).index());
             }});
+            0x4: SwitchOp::switchs({{
+                Rd = rvSext(NPC);
+                NPC = rvSext(Rs1 & (~0x1));
+            }}, {{
+                auto isa = static_cast<RiscvISA::ISA*>(
+                    xc->tcBase()->getIsaPtr());
+                isa->propagatePcidToIntRegId(xc, destRegIdx(0).index());
+                isa->applySwitchsCommit(xc, Rd);
+            }}, IsIndirectControl, IsUncondControl, IsCall);
             0x6: IOp::setrawid({{
                 Rd_sd = rvSext(Rs1_sd + imm);
             }}, id_code = {{

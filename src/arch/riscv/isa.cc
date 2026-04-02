@@ -1370,6 +1370,30 @@ RegVal
 ISA::readIdCsrIdgen() const
 { return bits(readMiscRegNoEffect(MISCREG_IDCSR), 23, 0); }
 
+RegVal
+ISA::readExitraw() const
+{ return readMiscRegNoEffect(MISCREG_EXITRAW); }
+
+void
+ISA::writeExitraw(RegVal exitraw)
+{ setMiscReg(MISCREG_EXITRAW, exitraw); }
+
+void
+ISA::writeIdCsrUse(bool use)
+{
+    RegVal idcsr = readMiscRegNoEffect(MISCREG_IDCSR);
+    replaceBits(idcsr, 30, 30, use ? 1 : 0);
+    setMiscReg(MISCREG_IDCSR, idcsr);
+}
+
+void
+ISA::writeIdCsrPuse(bool puse)
+{
+    RegVal idcsr = readMiscRegNoEffect(MISCREG_IDCSR);
+    replaceBits(idcsr, 31, 31, puse ? 1 : 0);
+    setMiscReg(MISCREG_IDCSR, idcsr);
+}
+
 void
 ISA::writeIdCsrIdgen(RegVal idgen)
 {
@@ -1513,6 +1537,38 @@ ISA::allocateIntRegNewId(ExecContext *xc, RegIndex dst_reg_idx)
         writeGprId(dst_reg_idx, allocatedId);
     }
     writeIdCsrIdgen(nextId);
+}
+
+void
+ISA::applySwitchsCommit(ExecContext *xc, Addr link_addr)
+{
+    auto pm = static_cast<PrivilegeMode>(xc->readMiscReg(MISCREG_PRV));
+
+    if (pm != PRV_U || !readIdCsrUse()) {
+        return;
+    }
+
+    const bool old_use = readIdCsrUse();
+    writeIdCsrPuse(old_use);
+    writeIdCsrUse(false);
+    writeExitraw(link_addr);
+}
+
+void
+ISA::restoreUseOnUserReturn(ExecContext *xc, Addr next_pc)
+{
+    auto pm = static_cast<PrivilegeMode>(xc->readMiscReg(MISCREG_PRV));
+
+    if (pm != PRV_U || !readIdCsrPuse()) {
+        return;
+    }
+
+    if (rvSext(next_pc) != rvSext(readExitraw())) {
+        return;
+    }
+
+    writeIdCsrUse(readIdCsrPuse());
+    writeIdCsrPuse(false);
 }
 
 void

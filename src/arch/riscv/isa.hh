@@ -235,6 +235,10 @@ class ISA : public BaseISA
     bool readIdCsrUse() const;
     bool readIdCsrPuse() const;
     RegVal readIdCsrIdgen() const;
+    RegVal readExitraw() const;
+    void writeExitraw(RegVal exitraw);
+    void writeIdCsrUse(bool use);
+    void writeIdCsrPuse(bool puse);
     void writeIdCsrIdgen(RegVal idgen);
     bool shouldApplyIntIdSemantics(ExecContext *xc) const;
     bool shouldApplyLsSsSemantics(ExecContext *xc) const;
@@ -245,6 +249,8 @@ class ISA : public BaseISA
     void writeIntRegIdImmediate(ExecContext *xc, RegIndex dst_reg_idx,
                                 RegVal id);
     void allocateIntRegNewId(ExecContext *xc, RegIndex dst_reg_idx);
+    void applySwitchsCommit(ExecContext *xc, Addr link_addr);
+    void restoreUseOnUserReturn(ExecContext *xc, Addr next_pc);
     RegVal readLsSsKeyLow(ExecContext *xc) const;
     RegVal readLsSsKeyHigh(ExecContext *xc) const;
     RegVal buildLsSsValueWithId(ExecContext *xc, RegIndex reg_idx,

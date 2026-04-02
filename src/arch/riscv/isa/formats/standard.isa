@@ -409,6 +409,13 @@ def template IdJumpExecute {{
         %(code)s;
         %(op_wb)s;
         %(id_code)s;
+        if (this->isReturn()) {
+            auto isa = static_cast<RiscvISA::ISA*>(
+                xc->tcBase()->getIsaPtr());
+            const Addr next_pc = rvSext(
+                (xc->tcBase()->getReg(srcRegIdx(0)) + imm) & ~0x1);
+            isa->restoreUseOnUserReturn(xc, next_pc);
+        }
         return NoFault;
     }
 
@@ -428,6 +435,60 @@ def template IdJumpExecute {{
         std::stringstream ss;
         ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
            << imm << "(" << registerName(srcRegIdx(0)) << ")";
+        return ss.str();
+    }
+}};
+
+def template SwitchDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      private:
+        %(reg_idx_arr_decl)s;
+
+      public:
+        %(class_name)s(ExtMachInst machInst);
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+
+        std::string
+        generateDisassembly(
+                Addr pc, const loader::SymbolTable *symtab) const override;
+
+        std::unique_ptr<PCStateBase> branchTarget(
+                ThreadContext *tc) const override;
+
+        using StaticInst::branchTarget;
+    };
+}};
+
+def template SwitchExecute {{
+    Fault
+    %(class_name)s::execute(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+        %(op_rd)s;
+        %(code)s;
+        %(op_wb)s;
+        %(id_code)s;
+        return NoFault;
+    }
+
+    std::unique_ptr<PCStateBase>
+    %(class_name)s::branchTarget(ThreadContext *tc) const
+    {
+        PCStateBase *pc_ptr = tc->pcState().clone();
+        pc_ptr->as<PCState>().set(rvSext(tc->getReg(srcRegIdx(0)) & ~0x1));
+        return std::unique_ptr<PCStateBase>{pc_ptr};
+    }
+
+    std::string
+    %(class_name)s::generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+           << registerName(srcRegIdx(0)) << ", "
+           << registerName(srcRegIdx(1));
         return ss.str();
     }
 }};
@@ -655,6 +716,17 @@ def format Jump(code, id_code=';', *opt_flags) {{
     decode_block = BasicDecode.subst(iop)
     exec_output = IdJumpExecute.subst(iop) \
         if id_code else JumpExecute.subst(iop)
+}};
+
+def format SwitchOp(code, id_code=';', *opt_flags) {{
+    regs = ['destRegIdx(0)', 'srcRegIdx(0)', 'srcRegIdx(1)']
+    iop = InstObjParams(name, Name, 'RegOp',
+        {'code': code, 'id_code': id_code, 'regs': ','.join(regs)},
+        opt_flags)
+    header_output = SwitchDeclare.subst(iop)
+    decoder_output = BasicConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = SwitchExecute.subst(iop)
 }};
 
 def format UOp(code, id_code=';', *opt_flags) {{
