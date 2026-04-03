@@ -1535,8 +1535,8 @@ ISA::allocateIntRegNewId(ExecContext *xc, RegIndex dst_reg_idx)
 
     if (dst_reg_idx != int_reg::_ZeroIdx) {
         writeGprId(dst_reg_idx, allocatedId);
+        writeIdCsrIdgen(nextId);
     }
-    writeIdCsrIdgen(nextId);
 }
 
 void
