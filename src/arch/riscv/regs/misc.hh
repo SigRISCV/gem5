@@ -333,6 +333,7 @@ enum MiscRegIndex
     MISCREG_IDCSR,
     MISCREG_ENCMAP,
     MISCREG_EXITRAW,
+    MISCREG_HASHSIG,
 
     NUM_PHYS_MISCREGS,
     MISCREG_FFLAGS_EXE = NUM_PHYS_MISCREGS,
@@ -656,6 +657,7 @@ enum CSRIndex
     CSR_IDCSR = 0x5F3,
     CSR_ENCMAP = 0x5F4,
     CSR_EXITRAW = 0x5F5,
+    CSR_HASHSIG = 0x5F6,
     CSR_MKEYL = 0x7F0,
     CSR_MKEYH = 0x7F1
 
@@ -1420,6 +1422,8 @@ const std::unordered_map<int, CSRMetadata> CSRData = {
      {"encmap", MISCREG_ENCMAP, rvTypeFlags(RV64), isaExtsFlags()}},
     {CSR_EXITRAW,
      {"exitraw", MISCREG_EXITRAW, rvTypeFlags(RV64), isaExtsFlags()}},
+    {CSR_HASHSIG,
+     {"hashsig", MISCREG_HASHSIG, rvTypeFlags(RV64), isaExtsFlags()}},
 };
 
 /**
