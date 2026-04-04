@@ -50,6 +50,7 @@
   <reg name="hcause" bitsize="32"/>
   <reg name="hbadaddr" bitsize="32"/>
   <reg name="hip" bitsize="32"/>
+  <reg name="priv" bitsize="32"/>
   <!-- <reg name="instret" bitsize="32"/>
   <reg name="hpmcounter3" bitsize="32"/>
   <reg name="hpmcounter4" bitsize="32"/>

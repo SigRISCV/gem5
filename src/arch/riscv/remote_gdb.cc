@@ -212,9 +212,20 @@ RemoteGDB::acc(Addr va, size_t len)
 {
     if (FullSystem)
     {
+        if (len == 0) {
+            return false;
+        }
+
         MMU *mmu = static_cast<MMU *>(context()->getMMUPtr());
+        System *sys = context()->getSystemPtr();
         unsigned logBytes;
         Addr paddr = va;
+        Addr end = va + len - 1;
+
+        // Reject wrapped ranges such as [-2, -1] before probing memory.
+        if (end < va) {
+            return false;
+        }
 
         // TODO: does this need virt as well?
         PrivilegeMode pmode = mmu->getMemAccessInfo(
@@ -226,10 +237,14 @@ RemoteGDB::acc(Addr va, size_t len)
             Walker *walker = mmu->getDataWalker();
             Fault fault = walker->startFunctional(
                 context(), paddr, logBytes, BaseMMU::Read);
-            if (fault != NoFault)
+            if (fault != NoFault) {
                 return false;
+            }
+
+            return sys->isMemAddr(paddr);
         }
-        return true;
+
+        return sys->isMemAddr(va) && sys->isMemAddr(end);
     }
 
     return context()->getProcessPtr()->pTable->lookup(va) != nullptr;
@@ -344,6 +359,7 @@ RemoteGDB::Riscv32GdbRegCache::getRegs(ThreadContext *context)
         CSRData.at(CSR_MTVAL).physIndex);
     r.mip = context->readMiscReg(
         CSRData.at(CSR_MIP).physIndex) & RVxCSRMasks.at(CSR_MIP);
+    r.priv = context->readMiscRegNoEffect(MISCREG_PRV);
 
     // H mode CSR (to be implemented)
 }
@@ -413,6 +429,7 @@ RemoteGDB::Riscv32GdbRegCache::setRegs(ThreadContext *context) const
         CSRData.at(CSR_MCAUSE).physIndex, r.mcause);
     context->setMiscRegNoEffect(
         CSRData.at(CSR_MTVAL).physIndex, r.mtval);
+    context->setMiscRegNoEffect(MISCREG_PRV, r.priv);
 
     // H mode CSR (to be implemented)
 }
@@ -506,6 +523,27 @@ RemoteGDB::Riscv64GdbRegCache::getRegs(ThreadContext *context)
         CSRData.at(CSR_MTVAL).physIndex);
     r.mip = context->readMiscReg(
         CSRData.at(CSR_MIP).physIndex) & RVxCSRMasks.at(CSR_MIP);
+    r.priv = context->readMiscRegNoEffect(MISCREG_PRV);
+
+    // SIGRISCV custom CSR
+    for (int i = 0; i < 32; ++i) {
+        r.gprid[i] = context->readMiscRegNoEffect(
+            CSRData.at(static_cast<CSRIndex>(CSR_GPRID0 + i)).physIndex);
+    }
+    r.skeyl = context->readMiscRegNoEffect(CSRData.at(CSR_SKEYL).physIndex);
+    r.skeyh = context->readMiscRegNoEffect(CSRData.at(CSR_SKEYH).physIndex);
+    r.pcid = context->readMiscRegNoEffect(CSRData.at(CSR_PCID).physIndex);
+    r.idcsr = context->readMiscRegNoEffect(CSRData.at(CSR_IDCSR).physIndex) &
+              RVxCSRMasks.at(CSR_IDCSR);
+    r.encmap = context->readMiscRegNoEffect(CSRData.at(CSR_ENCMAP).physIndex) &
+               RVxCSRMasks.at(CSR_ENCMAP);
+    r.exitraw =
+        context->readMiscRegNoEffect(CSRData.at(CSR_EXITRAW).physIndex) &
+        RVxCSRMasks.at(CSR_EXITRAW);
+    r.hashsig =
+        context->readMiscRegNoEffect(CSRData.at(CSR_HASHSIG).physIndex);
+    r.mkeyl = context->readMiscRegNoEffect(CSRData.at(CSR_MKEYL).physIndex);
+    r.mkeyh = context->readMiscRegNoEffect(CSRData.at(CSR_MKEYH).physIndex);
 
     // H mode CSR (to be implemented)
 }
@@ -574,6 +612,23 @@ RemoteGDB::Riscv64GdbRegCache::setRegs(ThreadContext *context) const
         CSRData.at(CSR_MCAUSE).physIndex, r.mcause);
     context->setMiscRegNoEffect(
         CSRData.at(CSR_MTVAL).physIndex, r.mtval);
+    context->setMiscRegNoEffect(MISCREG_PRV, r.priv);
+
+    // SIGRISCV custom CSR
+    for (int i = 0; i < 32; ++i) {
+        context->setMiscRegNoEffect(
+            CSRData.at(static_cast<CSRIndex>(CSR_GPRID0 + i)).physIndex,
+            r.gprid[i]);
+    }
+    context->setMiscRegNoEffect(CSRData.at(CSR_SKEYL).physIndex, r.skeyl);
+    context->setMiscRegNoEffect(CSRData.at(CSR_SKEYH).physIndex, r.skeyh);
+    context->setMiscRegNoEffect(CSRData.at(CSR_PCID).physIndex, r.pcid);
+    context->setMiscRegNoEffect(CSRData.at(CSR_MKEYL).physIndex, r.mkeyl);
+    context->setMiscRegNoEffect(CSRData.at(CSR_MKEYH).physIndex, r.mkeyh);
+    context->setMiscRegNoEffect(CSRData.at(CSR_HASHSIG).physIndex, r.hashsig);
+    setRegNoEffectWithMask(context, RV64, pms, CSR_IDCSR, r.idcsr);
+    setRegNoEffectWithMask(context, RV64, pms, CSR_ENCMAP, r.encmap);
+    setRegNoEffectWithMask(context, RV64, pms, CSR_EXITRAW, r.exitraw);
 
     // H mode CSR (to be implemented)
 }

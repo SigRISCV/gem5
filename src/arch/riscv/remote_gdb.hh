@@ -126,6 +126,7 @@ class RemoteGDB : public BaseRemoteGDB
             uint32_t hcause;
             uint32_t hbadaddr;
             uint32_t hip;
+            uint32_t priv;
         } r;
       public:
         char *data() { return (char *)&r; }
@@ -200,6 +201,17 @@ class RemoteGDB : public BaseRemoteGDB
             uint64_t hcause;
             uint64_t hbadaddr;
             uint64_t hip;
+            uint64_t priv;
+            uint64_t gprid[32];
+            uint64_t skeyl;
+            uint64_t skeyh;
+            uint64_t pcid;
+            uint64_t idcsr;
+            uint64_t encmap;
+            uint64_t exitraw;
+            uint64_t hashsig;
+            uint64_t mkeyl;
+            uint64_t mkeyh;
         } r;
       public:
         char *data() { return (char *)&r; }

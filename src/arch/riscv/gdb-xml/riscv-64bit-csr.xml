@@ -47,6 +47,48 @@
   <reg name="hcause" bitsize="64"/>
   <reg name="hbadaddr" bitsize="64"/>
   <reg name="hip" bitsize="64"/>
+  <reg name="priv" bitsize="64"/>
+  <reg name="gprid0" bitsize="64"/>
+  <reg name="gprid1" bitsize="64"/>
+  <reg name="gprid2" bitsize="64"/>
+  <reg name="gprid3" bitsize="64"/>
+  <reg name="gprid4" bitsize="64"/>
+  <reg name="gprid5" bitsize="64"/>
+  <reg name="gprid6" bitsize="64"/>
+  <reg name="gprid7" bitsize="64"/>
+  <reg name="gprid8" bitsize="64"/>
+  <reg name="gprid9" bitsize="64"/>
+  <reg name="gprid10" bitsize="64"/>
+  <reg name="gprid11" bitsize="64"/>
+  <reg name="gprid12" bitsize="64"/>
+  <reg name="gprid13" bitsize="64"/>
+  <reg name="gprid14" bitsize="64"/>
+  <reg name="gprid15" bitsize="64"/>
+  <reg name="gprid16" bitsize="64"/>
+  <reg name="gprid17" bitsize="64"/>
+  <reg name="gprid18" bitsize="64"/>
+  <reg name="gprid19" bitsize="64"/>
+  <reg name="gprid20" bitsize="64"/>
+  <reg name="gprid21" bitsize="64"/>
+  <reg name="gprid22" bitsize="64"/>
+  <reg name="gprid23" bitsize="64"/>
+  <reg name="gprid24" bitsize="64"/>
+  <reg name="gprid25" bitsize="64"/>
+  <reg name="gprid26" bitsize="64"/>
+  <reg name="gprid27" bitsize="64"/>
+  <reg name="gprid28" bitsize="64"/>
+  <reg name="gprid29" bitsize="64"/>
+  <reg name="gprid30" bitsize="64"/>
+  <reg name="gprid31" bitsize="64"/>
+  <reg name="skeyl" bitsize="64"/>
+  <reg name="skeyh" bitsize="64"/>
+  <reg name="pcid" bitsize="64"/>
+  <reg name="idcsr" bitsize="64"/>
+  <reg name="encmap" bitsize="64"/>
+  <reg name="exitraw" bitsize="64"/>
+  <reg name="hashsig" bitsize="64"/>
+  <reg name="mkeyl" bitsize="64"/>
+  <reg name="mkeyh" bitsize="64"/>
   <!-- <reg name="instret" bitsize="64"/>
   <reg name="hpmcounter3" bitsize="64"/>
   <reg name="hpmcounter4" bitsize="64"/>
