@@ -46,9 +46,9 @@ class L2Cache(Cache):
 def build_system(args):
     cpu_cls = CPU_TYPES[args.cpu_type]
 
-    system = System(mmap_using_noreserve=True)
+    system = RiscvSystem(mmap_using_noreserve=True)
     system.mem_mode = cpu_cls.memory_mode()
-    system.mem_ranges = [AddrRange(0x0, size=args.mem_size)]
+    system.mem_ranges = [AddrRange(0x80000000, size=args.mem_size)]
 
     system.workload = m5.objects.RiscvBareMetal()
     system.workload.bootloader = args.kernel
@@ -70,6 +70,13 @@ def build_system(args):
     system.l2bus = L2XBar()
     system.membus = SystemXBar()
     system.system_port = system.membus.cpu_side_ports
+
+    # Provide a minimal RISC-V timer backend so rdtime/time CSR reads
+    # can resolve through RiscvSystem -> CLINT -> mtime.
+    system.rtc = RiscvRTC(frequency=Frequency("100MHz"))
+    system.clint = Clint(pio_addr=0x2000000, pio_size=0xC000, num_threads=1)
+    system.clint.int_pin = system.rtc.int_pin
+    system.clint.pio = system.membus.mem_side_ports
 
     system.cpu.icache = L1ICache()
     system.cpu.dcache = L1DCache()
