@@ -51,6 +51,7 @@ namespace gem5
 struct RiscvISAParams;
 class Checkpoint;
 class ExecContext;
+class StaticInst;
 
 namespace RiscvISA
 {
@@ -242,9 +243,15 @@ class ISA : public BaseISA
     void writeIdCsrIdgen(RegVal idgen);
     bool shouldApplyIntIdSemantics(ExecContext *xc) const;
     bool shouldApplyLsSsSemantics(ExecContext *xc) const;
+    void clearInstDestIntRegIdIfNeeded(ExecContext *xc,
+                                       const StaticInst *inst);
     void clearIntRegId(ExecContext *xc, RegIndex int_reg_idx);
     void propagateIntRegIdFromRs1(ExecContext *xc, RegIndex src_reg_idx,
                                   RegIndex dst_reg_idx);
+    void propagateAddIntRegId(ExecContext *xc, RegIndex rs1_reg_idx,
+                              RegIndex rs2_reg_idx, RegIndex dst_reg_idx);
+    void propagateSubIntRegId(ExecContext *xc, RegIndex rs1_reg_idx,
+                              RegIndex rs2_reg_idx, RegIndex dst_reg_idx);
     void propagatePcidToIntRegId(ExecContext *xc, RegIndex dst_reg_idx);
     void writeIntRegIdImmediate(ExecContext *xc, RegIndex dst_reg_idx,
                                 RegVal id);

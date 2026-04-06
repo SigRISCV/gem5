@@ -42,7 +42,7 @@
 // memory address, and sign extend others.
 decode QUADRANT default Unknown::unknown() {
     0x0: decode COPCODE {
-        0x0: CIAddi4spnOp::c_addi4spn({{
+        0x0: IdCIAddi4spnOp::c_addi4spn({{
             imm = CIMM8<1:1> << 2 |
                   CIMM8<0:0> << 3 |
                   CIMM8<7:6> << 4 |
@@ -52,7 +52,12 @@ decode QUADRANT default Unknown::unknown() {
                 return std::make_shared<IllegalInstFault>("immediate = 0",
                                                            machInst);
             Rp2 = rvSext(sp + imm);
-        }}, uint64_t);
+        }}, uint64_t, id_code = {{
+            auto isa = static_cast<RiscvISA::ISA*>(
+                xc->tcBase()->getIsaPtr());
+            isa->propagateIntRegIdFromRs1(
+                xc, RiscvISA::int_reg::_SpIdx, destRegIdx(0).index());
+        }});
         format CompressedLoad {
             0x1: decode ENABLE_ZCD {
                 0x1: c_fld({{
@@ -189,7 +194,7 @@ decode QUADRANT default Unknown::unknown() {
         }
     }
     0x1: decode COPCODE {
-        0x0: CIOp::c_addi({{
+        0x0: IdCIOp::c_addi({{
             imm = sext<6>(CIMM5 | (CIMM1 << 5));
         }}, {{
             if ((RC1 == 0) != (imm == 0)) {
@@ -200,11 +205,20 @@ decode QUADRANT default Unknown::unknown() {
                 }
             }
             Rc1_sd = rvSext(Rc1_sd + imm);
+        }}, id_code = {{
+            auto isa = static_cast<RiscvISA::ISA*>(
+                xc->tcBase()->getIsaPtr());
+            isa->propagateIntRegIdFromRs1(
+                xc, srcRegIdx(0).index(), destRegIdx(0).index());
         }});
         0x1: decode RVTYPE {
-            0x0: CJOp::c_jal({{
+            0x0: IdCJOp::c_jal({{
                 ra = rvSext(NPC);
                 NPC = rvSext(PC + imm);
+            }}, {{
+                auto isa = static_cast<RiscvISA::ISA*>(
+                    xc->tcBase()->getIsaPtr());
+                isa->propagatePcidToIntRegId(xc, RiscvISA::int_reg::_RaIdx);
             }}, IsDirectControl, IsUncondControl, IsCall);
             0x1: CIOp::c_addiw({{
                 imm = sext<6>(CIMM5 | (CIMM1 << 5));
@@ -223,7 +237,7 @@ decode QUADRANT default Unknown::unknown() {
             Rc1_sd = imm;
         }});
         0x3: decode RC1 {
-            0x2: CIOp::c_addi16sp({{
+            0x2: IdCIOp::c_addi16sp({{
                 imm = sext<10>((CIMM5<4:4> << 4) |
                                (CIMM5<0:0> << 5) |
                                (CIMM5<3:3> << 6) |
@@ -235,6 +249,11 @@ decode QUADRANT default Unknown::unknown() {
                             "immediate = 0", machInst);
                 }
                 sp_sd = rvSext(sp_sd + imm);
+            }}, id_code = {{
+                auto isa = static_cast<RiscvISA::ISA*>(
+                    xc->tcBase()->getIsaPtr());
+                isa->propagateIntRegIdFromRs1(
+                    xc, RiscvISA::int_reg::_SpIdx, destRegIdx(0).index());
             }});
             default: CIOp::c_lui({{
                 imm = sext<6>(CIMM5 | (CIMM1 << 5)) << 12;
@@ -285,8 +304,15 @@ decode QUADRANT default Unknown::unknown() {
             format CompressedROp {
                 0x3: decode CFUNCT1 {
                     0x0: decode CFUNCT2LOW {
-                        0x0: c_sub({{
+                        0x0: IdCompressedROp::c_sub({{
                             Rp1 = rvSext(Rp1 - Rp2);
+                        }}, id_code = {{
+                            auto isa = static_cast<RiscvISA::ISA*>(
+                                xc->tcBase()->getIsaPtr());
+                            isa->propagateSubIntRegId(
+                                xc, srcRegIdx(0).index(),
+                                srcRegIdx(1).index(),
+                                destRegIdx(0).index());
                         }});
                         0x1: c_xor({{
                             Rp1 = rvSext(Rp1 ^ Rp2);
@@ -438,9 +464,15 @@ decode QUADRANT default Unknown::unknown() {
                     }
                     NPC = rvSext(Rc1 & (~0x1));
                 }}, IsIndirectControl, IsUncondControl);
-                default: CROp::c_mv({{
+                default: IdCROp::c_mv({{
                     // RC1 == 0 is HINT
                     Rc1 = rvSext(Rc2);
+                }}, id_code = {{
+                    auto isa = static_cast<RiscvISA::ISA*>(
+                        xc->tcBase()->getIsaPtr());
+                    isa->propagateIntRegIdFromRs1(
+                                xc, srcRegIdx(0).index(),
+                                destRegIdx(0).index());
                 }});
             }
             0x1: decode RC2 {
@@ -454,14 +486,25 @@ decode QUADRANT default Unknown::unknown() {
                         return std::make_shared<BreakpointFault>(
                             xc->pcState(), virtualized);
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                    default: CJump::c_jalr({{
+                    default: IdCJump::c_jalr({{
                         ra = rvSext(NPC);
                         NPC = rvSext(Rc1 & (~0x1));
+                    }}, {{
+                        auto isa = static_cast<RiscvISA::ISA*>(
+                            xc->tcBase()->getIsaPtr());
+                        isa->propagatePcidToIntRegId(
+                            xc, RiscvISA::int_reg::_RaIdx);
                     }}, IsIndirectControl, IsUncondControl, IsCall);
                 }
-                default: CompressedROp::c_add({{
+                default: IdCompressedROp::c_add({{
                     // RC1 == 0 is HINT
                     Rc1_sd = rvSext(Rc1_sd + Rc2_sd);
+                }}, id_code = {{
+                    auto isa = static_cast<RiscvISA::ISA*>(
+                        xc->tcBase()->getIsaPtr());
+                    isa->propagateAddIntRegId(
+                        xc, srcRegIdx(0).index(), srcRegIdx(1).index(),
+                        destRegIdx(0).index());
                 }});
             }
         }
@@ -539,48 +582,27 @@ decode QUADRANT default Unknown::unknown() {
                 format Load {
                     0x0: lb({{
                         Rd_sd = Mem_sb;
-                        auto isa = static_cast<RiscvISA::ISA*>(
-                            xc->tcBase()->getIsaPtr());
-                        isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
                 0x1: lh({{
                     Rd_sd = Mem_sh;
-                    auto isa = static_cast<RiscvISA::ISA*>(
-                        xc->tcBase()->getIsaPtr());
-                    isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
                 0x2: lw({{
                     Rd_sd = Mem_sw;
-                    auto isa = static_cast<RiscvISA::ISA*>(
-                        xc->tcBase()->getIsaPtr());
-                    isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
                 0x3: decode RVTYPE {
                     0x1: ld({{
                         Rd_sd = Mem_sd;
-                        auto isa = static_cast<RiscvISA::ISA*>(
-                            xc->tcBase()->getIsaPtr());
-                        isa->clearIntRegId(xc, destRegIdx(0).index());
                     }});
                 }
                 0x4: lbu({{
                     Rd = Mem_ub;
-                    auto isa = static_cast<RiscvISA::ISA*>(
-                        xc->tcBase()->getIsaPtr());
-                    isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
                 0x5: lhu({{
                     Rd = Mem_uh;
-                    auto isa = static_cast<RiscvISA::ISA*>(
-                        xc->tcBase()->getIsaPtr());
-                    isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
                     0x6: decode RVTYPE {
                         0x1: lwu({{
                             Rd = Mem_uw;
-                            auto isa = static_cast<RiscvISA::ISA*>(
-                                xc->tcBase()->getIsaPtr());
-                            isa->clearIntRegId(xc, destRegIdx(0).index());
                         }});
                     }
                 }
@@ -1382,7 +1404,7 @@ decode QUADRANT default Unknown::unknown() {
                             Rd_sd = isa->finishLsResult(
                                 xc, destRegIdx(0).index(), result);
                         }
-                    }});
+                    }}, id_code=';');
                 }
                 0x4: decode RVTYPE {
                     0x1: ls_map({{
@@ -1408,7 +1430,7 @@ decode QUADRANT default Unknown::unknown() {
                                 tweak, keyl, keyh, 7);
                             Rd_sd = isa->finishLsResult(xc, rd_idx, result);
                         }
-                    }});
+                    }}, id_code=';');
                 }
             }
 
@@ -1619,7 +1641,7 @@ decode QUADRANT default Unknown::unknown() {
             }
 
             format IOp {
-                0x0: addi({{
+                0x0: IdIOp::addi({{
                     Rd_sd = rvSext(Rs1_sd + imm);
                 }}, id_code = {{
                     auto isa = static_cast<RiscvISA::ISA*>(
@@ -1629,26 +1651,13 @@ decode QUADRANT default Unknown::unknown() {
                 }});
                 0x2: slti({{
                     Rd = (rvSext(Rs1_sd) < imm) ? 1 : 0;
-                }}, id_code = {{
-                    auto isa = static_cast<RiscvISA::ISA*>(
-                        xc->tcBase()->getIsaPtr());
-                    isa->clearIntRegId(xc, destRegIdx(0).index());
                 }});
                 0x3: sltiu({{
                     Rd = (rvZext(Rs1) < imm) ? 1 : 0;
-                }}, uint64_t, imm_code = {{ imm = rvZext(sext<12>(IMM12)); }},
-                   id_code = {{
-                    auto isa = static_cast<RiscvISA::ISA*>(
-                        xc->tcBase()->getIsaPtr());
-                    isa->clearIntRegId(xc, destRegIdx(0).index());
-                }});
+                }}, uint64_t, imm_code = {{ imm = rvZext(sext<12>(IMM12)); }});
                 0x4: xori({{
                     Rd = rvSext(Rs1 ^ imm);
-                }}, uint64_t, id_code = {{
-                    auto isa = static_cast<RiscvISA::ISA*>(
-                        xc->tcBase()->getIsaPtr());
-                    isa->clearIntRegId(xc, destRegIdx(0).index());
-                }});
+                }}, uint64_t);
                 0x5: decode FS3 {
                     0x0: srli({{
                         if (rvSelect((bool)SHAMT6BIT5, false)) {
@@ -1656,10 +1665,6 @@ decode QUADRANT default Unknown::unknown() {
                                     "shmat[5] != 0", machInst);
                         }
                         Rd = rvSext(rvZext(Rs1) >> imm);
-                    }}, id_code = {{
-                        auto isa = static_cast<RiscvISA::ISA*>(
-                            xc->tcBase()->getIsaPtr());
-                        isa->clearIntRegId(xc, destRegIdx(0).index());
                     }}, imm_type = uint64_t, imm_code = {{ imm = SHAMT6; }});
                     0x1: decode RVTYPE {
                         0x0: unzip({{
@@ -1684,10 +1689,6 @@ decode QUADRANT default Unknown::unknown() {
                                     "shmat[5] != 0", machInst);
                         }
                         Rd_sd = rvSext(Rs1_sd) >> imm;
-                    }}, id_code = {{
-                        auto isa = static_cast<RiscvISA::ISA*>(
-                            xc->tcBase()->getIsaPtr());
-                        isa->clearIntRegId(xc, destRegIdx(0).index());
                     }}, imm_type = uint64_t, imm_code = {{ imm = SHAMT6; }});
                     0x9: bexti({{
                         if (rvSelect((bool)SHAMT6BIT5, false)) {
@@ -1757,23 +1758,15 @@ decode QUADRANT default Unknown::unknown() {
                     }
                     default: ori({{
                         Rd = rvSext(Rs1 | imm);
-                    }}, uint64_t, id_code = {{
-                        auto isa = static_cast<RiscvISA::ISA*>(
-                            xc->tcBase()->getIsaPtr());
-                        isa->clearIntRegId(xc, destRegIdx(0).index());
-                    }});
+                    }}, uint64_t);
                 }
                 0x7: andi({{
                     Rd = rvSext(Rs1 & imm);
-                }}, uint64_t, id_code = {{
-                    auto isa = static_cast<RiscvISA::ISA*>(
-                        xc->tcBase()->getIsaPtr());
-                    isa->clearIntRegId(xc, destRegIdx(0).index());
-                }});
+                }}, uint64_t);
             }
         }
 
-        0x05: UOp::auipc({{
+        0x05: IdUOp::auipc({{
             Rd = rvSext(PC + (sext<20>(imm) << 12));
         }}, id_code = {{
             auto isa = static_cast<RiscvISA::ISA*>(
@@ -2439,22 +2432,24 @@ decode QUADRANT default Unknown::unknown() {
             format ROp {
                 0x0: decode KFUNCT5 {
                     0x00: decode BS {
-                        0x0: add({{
+                        0x0: IdROp::add({{
                             Rd = rvSext(Rs1_sd + Rs2_sd);
                         }}, id_code = {{
                             auto isa = static_cast<RiscvISA::ISA*>(
                                 xc->tcBase()->getIsaPtr());
-                            isa->propagateIntRegIdFromRs1(
+                            isa->propagateAddIntRegId(
                                 xc, srcRegIdx(0).index(),
+                                srcRegIdx(1).index(),
                                 destRegIdx(0).index());
                         }});
-                        0x1: sub({{
+                        0x1: IdROp::sub({{
                             Rd = rvSext(Rs1_sd - Rs2_sd);
                         }}, id_code = {{
                             auto isa = static_cast<RiscvISA::ISA*>(
                                 xc->tcBase()->getIsaPtr());
-                            isa->propagateIntRegIdFromRs1(
+                            isa->propagateSubIntRegId(
                                 xc, srcRegIdx(0).index(),
+                                srcRegIdx(1).index(),
                                 destRegIdx(0).index());
                         }});
                     }
@@ -2780,10 +2775,6 @@ decode QUADRANT default Unknown::unknown() {
 
         0x0d: UOp::lui({{
             Rd = (sext<20>(imm) << 12);
-        }}, id_code = {{
-            auto isa = static_cast<RiscvISA::ISA*>(
-                xc->tcBase()->getIsaPtr());
-            isa->clearIntRegId(xc, destRegIdx(0).index());
         }});
 
         0x0e: decode RVTYPE {
@@ -6233,7 +6224,7 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x19: decode FUNCT3 {
-            0x0: Jump::jalr({{
+            0x0: IdJump::jalr({{
                 Rd = rvSext(NPC);
                 NPC = rvSext((imm + Rs1) & (~0x1));
             }}, {{
@@ -6243,7 +6234,7 @@ decode QUADRANT default Unknown::unknown() {
             }}, IsIndirectControl, IsUncondControl);
         }
 
-        0x1b: JOp::jal({{
+        0x1b: IdJOp::jal({{
             Rd = rvSext(NPC);
             NPC = rvSext(PC + imm);
         }}, {{
@@ -6666,21 +6657,21 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x16: decode FUNCT3 {
-            0x2: IOp::setdummyid({{
+            0x2: IdIOp::setdummyid({{
                 Rd_sd = rvSext(Rs1_sd + imm);
             }}, id_code = {{
                 auto isa = static_cast<RiscvISA::ISA*>(
                     xc->tcBase()->getIsaPtr());
                 isa->writeIntRegIdImmediate(xc, destRegIdx(0).index(), 1);
             }});
-            0x3: IOp::setnewid({{
+            0x3: IdIOp::setnewid({{
                 Rd_sd = rvSext(Rs1_sd + imm);
             }}, id_code = {{
                 auto isa = static_cast<RiscvISA::ISA*>(
                     xc->tcBase()->getIsaPtr());
                 isa->allocateIntRegNewId(xc, destRegIdx(0).index());
             }});
-            0x4: SwitchOp::switchs({{
+            0x4: IdSwitchOp::switchs({{
                 Rd = rvSext(NPC);
                 NPC = rvSext(Rs1 & (~0x1));
             }}, {{
@@ -6689,7 +6680,7 @@ decode QUADRANT default Unknown::unknown() {
                 isa->propagatePcidToIntRegId(xc, destRegIdx(0).index());
                 isa->applySwitchsCommit(xc, Rd);
             }}, IsIndirectControl, IsUncondControl, IsCall);
-            0x6: IOp::setrawid({{
+            0x6: IdIOp::setrawid({{
                 Rd_sd = rvSext(Rs1_sd + imm);
             }}, id_code = {{
                 auto isa = static_cast<RiscvISA::ISA*>(

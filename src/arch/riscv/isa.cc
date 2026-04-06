@@ -329,6 +329,7 @@ const std::array<const char *, NUM_MISCREGS> MiscRegNames = {{
     [MISCREG_IDCSR] = "IDCSR",
     [MISCREG_ENCMAP] = "ENCMAP",
     [MISCREG_EXITRAW] = "EXITRAW",
+    [MISCREG_HASHSIG] = "HASHSIG",
 
     [MISCREG_FFLAGS_EXE] = "FFLAGS_EXE",
 }};
@@ -1473,6 +1474,21 @@ ISA::finishLsResult(ExecContext *xc, RegIndex dst_reg_idx, RegVal result)
 }
 
 void
+ISA::clearInstDestIntRegIdIfNeeded(ExecContext *xc, const StaticInst *inst)
+{
+    if (inst->numDestRegs() == 0) {
+        return;
+    }
+
+    RegId dest = inst->destRegIdx(0);
+    if (dest.classValue() != IntRegClass) {
+        return;
+    }
+
+    clearIntRegId(xc, dest.index());
+}
+
+void
 ISA::clearIntRegId(ExecContext *xc, RegIndex int_reg_idx)
 {
     if (!shouldApplyIntIdSemantics(xc) || int_reg_idx == int_reg::_ZeroIdx) {
@@ -1491,6 +1507,33 @@ ISA::propagateIntRegIdFromRs1(ExecContext *xc, RegIndex src_reg_idx,
     }
 
     writeGprId(dst_reg_idx, readGprId(src_reg_idx));
+}
+
+void
+ISA::propagateAddIntRegId(ExecContext *xc, RegIndex rs1_reg_idx,
+                          RegIndex rs2_reg_idx, RegIndex dst_reg_idx)
+{
+    if (!shouldApplyIntIdSemantics(xc) || dst_reg_idx == int_reg::_ZeroIdx) {
+        return;
+    }
+
+    RegVal rs1_id = readGprId(rs1_reg_idx);
+    writeGprId(dst_reg_idx, rs1_id != 0 ? rs1_id : readGprId(rs2_reg_idx));
+}
+
+void
+ISA::propagateSubIntRegId(ExecContext *xc, RegIndex rs1_reg_idx,
+                          RegIndex rs2_reg_idx, RegIndex dst_reg_idx)
+{
+    if (!shouldApplyIntIdSemantics(xc) || dst_reg_idx == int_reg::_ZeroIdx) {
+        return;
+    }
+
+    RegVal rs1_id = readGprId(rs1_reg_idx);
+    RegVal rs2_id = readGprId(rs2_reg_idx);
+    writeGprId(dst_reg_idx, (rs2_id == 0)
+                                ? rs1_id
+                                : ((rs1_id != 0 && rs2_id != 0) ? 0 : rs1_id));
 }
 
 void

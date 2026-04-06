@@ -240,6 +240,8 @@ def template SpAdjMicroExecute {{
         %(op_rd)s;
         %(code)s;
         %(op_wb)s;
+        auto idIsa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        idIsa->clearInstDestIntRegIdIfNeeded(xc, this);
         return NoFault;
     }
 

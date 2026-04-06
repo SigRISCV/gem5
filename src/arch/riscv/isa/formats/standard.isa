@@ -70,6 +70,8 @@ def template ImmExecute {{
         %(op_rd)s;
         %(code)s;
         %(op_wb)s;
+        auto idIsa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        idIsa->clearInstDestIntRegIdIfNeeded(xc, this);
         return NoFault;
     }
 
@@ -137,6 +139,8 @@ def template CILuiExecute {{
         %(op_rd)s;
         %(code)s;
         %(op_wb)s;
+        auto idIsa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        idIsa->clearInstDestIntRegIdIfNeeded(xc, this);
         return NoFault;
     }
 
@@ -376,6 +380,8 @@ def template JumpExecute {{
         %(op_rd)s;
         %(code)s;
         %(op_wb)s;
+        auto idIsa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        idIsa->clearInstDestIntRegIdIfNeeded(xc, this);
         return NoFault;
     }
 
@@ -410,11 +416,11 @@ def template IdJumpExecute {{
         %(op_wb)s;
         %(id_code)s;
         if (this->isReturn()) {
-            auto isa = static_cast<RiscvISA::ISA*>(
+            auto idIsa = static_cast<RiscvISA::ISA*>(
                 xc->tcBase()->getIsaPtr());
             const Addr next_pc = rvSext(
                 (xc->tcBase()->getReg(srcRegIdx(0)) + imm) & ~0x1);
-            isa->restoreUseOnUserReturn(xc, next_pc);
+            idIsa->restoreUseOnUserReturn(xc, next_pc);
         }
         return NoFault;
     }
@@ -618,17 +624,37 @@ def template CSRExecute {{
     }
 }};
 
-def format ROp(code, id_code=';', *opt_flags) {{
+def format ROp(code, *opt_flags) {{
+    iop = InstObjParams(name, Name, 'RegOp',
+        {'code': code}, opt_flags)
+    header_output = BasicDeclare.subst(iop)
+    decoder_output = BasicConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = BasicExecute.subst(iop)
+}};
+
+def format IdROp(code, id_code=';', *opt_flags) {{
     iop = InstObjParams(name, Name, 'RegOp',
         {'code': code, 'id_code': id_code}, opt_flags)
     header_output = BasicDeclare.subst(iop)
     decoder_output = BasicConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = IdBasicExecute.subst(iop) \
-        if id_code else BasicExecute.subst(iop)
+    exec_output = IdBasicExecute.subst(iop)
 }};
 
 def format IOp(code, imm_type='int64_t', imm_code='imm = sext<12>(IMM12);',
+              *opt_flags) {{
+    regs = ['destRegIdx(0)','srcRegIdx(0)']
+    iop = InstObjParams(name, Name, 'ImmOp<%s>' % imm_type,
+        {'imm_code': imm_code, 'code': code,
+         'regs': ','.join(regs)}, opt_flags)
+    header_output = ImmDeclare.subst(iop)
+    decoder_output = ImmConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = ImmExecute.subst(iop)
+}};
+
+def format IdIOp(code, imm_type='int64_t', imm_code='imm = sext<12>(IMM12);',
               id_code=';', *opt_flags) {{
     regs = ['destRegIdx(0)','srcRegIdx(0)']
     iop = InstObjParams(name, Name, 'ImmOp<%s>' % imm_type,
@@ -637,7 +663,7 @@ def format IOp(code, imm_type='int64_t', imm_code='imm = sext<12>(IMM12);',
     header_output = ImmDeclare.subst(iop)
     decoder_output = ImmConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = IdImmExecute.subst(iop) if id_code else ImmExecute.subst(iop)
+    exec_output = IdImmExecute.subst(iop)
 }};
 
 def template DebugExecute {{
@@ -706,7 +732,18 @@ def format BOp(code, *opt_flags) {{
     exec_output = BranchExecute.subst(iop)
 }};
 
-def format Jump(code, id_code=';', *opt_flags) {{
+def format Jump(code, *opt_flags) {{
+    regs = ['srcRegIdx(0)']
+    iop = InstObjParams(name, Name, 'ImmOp<int64_t>',
+        {'code': code, 'imm_code': 'imm = sext<12>(IMM12);',
+         'regs': ','.join(regs)}, opt_flags)
+    header_output = JumpDeclare.subst(iop)
+    decoder_output = JumpConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = JumpExecute.subst(iop)
+}};
+
+def format IdJump(code, id_code=';', *opt_flags) {{
     regs = ['srcRegIdx(0)']
     iop = InstObjParams(name, Name, 'ImmOp<int64_t>',
         {'code': code, 'imm_code': 'imm = sext<12>(IMM12);',
@@ -714,11 +751,21 @@ def format Jump(code, id_code=';', *opt_flags) {{
     header_output = JumpDeclare.subst(iop)
     decoder_output = JumpConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = IdJumpExecute.subst(iop) \
-        if id_code else JumpExecute.subst(iop)
+    exec_output = IdJumpExecute.subst(iop)
 }};
 
-def format SwitchOp(code, id_code=';', *opt_flags) {{
+def format SwitchOp(code, *opt_flags) {{
+    regs = ['destRegIdx(0)', 'srcRegIdx(0)', 'srcRegIdx(1)']
+    iop = InstObjParams(name, Name, 'RegOp',
+        {'code': code, 'regs': ','.join(regs)},
+        opt_flags)
+    header_output = SwitchDeclare.subst(iop)
+    decoder_output = BasicConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = BasicExecute.subst(iop)
+}};
+
+def format IdSwitchOp(code, id_code=';', *opt_flags) {{
     regs = ['destRegIdx(0)', 'srcRegIdx(0)', 'srcRegIdx(1)']
     iop = InstObjParams(name, Name, 'RegOp',
         {'code': code, 'id_code': id_code, 'regs': ','.join(regs)},
@@ -729,7 +776,18 @@ def format SwitchOp(code, id_code=';', *opt_flags) {{
     exec_output = SwitchExecute.subst(iop)
 }};
 
-def format UOp(code, id_code=';', *opt_flags) {{
+def format UOp(code, *opt_flags) {{
+    regs = ['destRegIdx(0)']
+    iop = InstObjParams(name, Name, 'ImmOp<int64_t>',
+        {'code': code, 'imm_code': 'imm = IMM20;',
+         'regs': ','.join(regs)}, opt_flags)
+    header_output = ImmDeclare.subst(iop)
+    decoder_output = ImmConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = ImmExecute.subst(iop)
+}};
+
+def format IdUOp(code, id_code=';', *opt_flags) {{
     regs = ['destRegIdx(0)']
     iop = InstObjParams(name, Name, 'ImmOp<int64_t>',
         {'code': code, 'imm_code': 'imm = IMM20;',
@@ -737,10 +795,29 @@ def format UOp(code, id_code=';', *opt_flags) {{
     header_output = ImmDeclare.subst(iop)
     decoder_output = ImmConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = IdImmExecute.subst(iop) if id_code else ImmExecute.subst(iop)
+    exec_output = IdImmExecute.subst(iop)
 }};
 
-def format JOp(code, id_code=';', *opt_flags) {{
+def format JOp(code, *opt_flags) {{
+    imm_code = """
+                imm = UJIMMBITS10TO1 << 1   |
+                      UJIMMBIT11 << 11      |
+                      UJIMMBITS19TO12 << 12 |
+                      IMMSIGN << 20;
+                imm = sext<21>(imm);
+               """
+    pc = 'pc.set(pc.pc() + imm);'
+    regs = ['destRegIdx(0)']
+    iop = InstObjParams(name, Name, 'ImmOp<int64_t>',
+        {'code': code, 'imm_code': imm_code,
+         'regs': ','.join(regs)}, opt_flags)
+    header_output = BranchDeclare.subst(iop)
+    decoder_output = JumpConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = BranchExecute.subst(iop)
+}};
+
+def format IdJOp(code, id_code=';', *opt_flags) {{
     imm_code = """
                 imm = UJIMMBITS10TO1 << 1   |
                       UJIMMBIT11 << 11      |
@@ -756,8 +833,7 @@ def format JOp(code, id_code=';', *opt_flags) {{
     header_output = BranchDeclare.subst(iop)
     decoder_output = JumpConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = IdBranchExecute.subst(iop) \
-        if id_code else BranchExecute.subst(iop)
+    exec_output = IdBranchExecute.subst(iop)
 }};
 
 def format SystemOp(code, *opt_flags) {{

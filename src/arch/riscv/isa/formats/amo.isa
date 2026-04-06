@@ -250,6 +250,8 @@ def template LoadReservedExecute {{
 
         %(memacc_code)s;
         %(op_wb)s;
+        auto idIsa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        idIsa->clearInstDestIntRegIdIfNeeded(xc, this);
 
         return NoFault;
     }
@@ -281,6 +283,8 @@ def template StoreCondExecute {{
 
         %(postacc_code)s;
         %(op_wb)s;
+        auto idIsa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        idIsa->clearInstDestIntRegIdIfNeeded(xc, this);
 
         return NoFault;
     }
@@ -309,6 +313,8 @@ def template AtomicMemOpRMWExecute {{
         %(memacc_code)s;
         %(postacc_code)s;
         %(op_wb)s;
+        auto idIsa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        idIsa->clearInstDestIntRegIdIfNeeded(xc, this);
 
         return NoFault;
     }
@@ -388,6 +394,8 @@ def template LoadReservedCompleteAcc {{
 
         %(memacc_code)s;
         %(op_wb)s;
+        auto idIsa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        idIsa->clearInstDestIntRegIdIfNeeded(xc, this);
 
         return NoFault;
     }
@@ -405,6 +413,8 @@ def template StoreCondCompleteAcc {{
 
         %(postacc_code)s;
         %(op_wb)s;
+        auto idIsa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        idIsa->clearInstDestIntRegIdIfNeeded(xc, this);
 
         return NoFault;
     }
@@ -421,6 +431,8 @@ def template AtomicMemOpRMWCompleteAcc {{
 
         %(memacc_code)s;
         %(op_wb)s;
+        auto idIsa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        idIsa->clearInstDestIntRegIdIfNeeded(xc, this);
 
         return NoFault;
     }
