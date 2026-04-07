@@ -189,11 +189,15 @@ native.SConscript(src_dir.File('SConscript.native'),
         variant_dir=native_dir, exports={ 'env': native },
                   duplicate=GetOption('duplicate_sources'))
 
-main['CC'] = '${CROSS_COMPILE}gcc'
-main['CXX'] = '${CROSS_COMPILE}g++'
-main['AS'] = '${CROSS_COMPILE}as'
-main['LD'] = '${CROSS_COMPILE}ld'
-main['AR'] = '${CROSS_COMPILE}ar'
+main['CC'] = os.environ.get('CC', ARGUMENTS.get('CC', '${CROSS_COMPILE}gcc'))
+main['CXX'] = os.environ.get('CXX',
+            ARGUMENTS.get('CXX', '${CROSS_COMPILE}g++'))
+main['AS'] = os.environ.get('AS', ARGUMENTS.get('AS', '${CROSS_COMPILE}as'))
+main['LD'] = os.environ.get('LD', ARGUMENTS.get('LD', '${CROSS_COMPILE}ld'))
+main['AR'] = os.environ.get('AR', ARGUMENTS.get('AR', '${CROSS_COMPILE}ar'))
+main['RANLIB'] = os.environ.get(
+    'RANLIB', ARGUMENTS.get('RANLIB', '${CROSS_COMPILE}ranlib')
+)
 main['QEMU'] = 'qemu-${QEMU_ARCH}'
 
 class CallType(object):
@@ -258,6 +262,8 @@ for root, dirs, files in os.walk(abspath(src_dir)):
         # The user can pass extra build flags for each ABI
         append_abi_opt('CCFLAGS')
         append_abi_opt('CXXFLAGS')
+        append_abi_opt('ASFLAGS')
+        append_abi_opt('LINKFLAGS')
         append_abi_opt('LINKFLAGS')
 
         # Check if this version of QEMU is available for running unit tests.
