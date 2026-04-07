@@ -148,13 +148,18 @@ def build_board(args):
     kernel_args.extend(parse_kernel_args(args.kernel_args))
     print(f"kernel_args:{kernel_args}")
     kernel_path = prepare_kernel_image(args.kernel, args.bootloader)
+    checkpoint = (
+        Path(args.restore_checkpoint) if args.restore_checkpoint else None
+    )
 
     board.set_kernel_disk_workload(
         bootloader=BootloaderResource(args.bootloader, architecture=ISA.RISCV),
         kernel=KernelResource(kernel_path, architecture=ISA.RISCV),
         disk_image=DiskImageResource(args.disk_image),
+        readfile=args.readfile or None,
         kernel_args=kernel_args,
         exit_on_work_items=False,
+        checkpoint=checkpoint,
     )
     board.disk.interrupt_id = VIRTIO_BLK_IRQ
     board.rng.interrupt_id = VIRTIO_RNG_IRQ
@@ -242,16 +247,40 @@ def main():
         default=0,
         help="Simulation ticks to run; 0 means no limit",
     )
+    parser.add_argument(
+        "--checkpoint-dir",
+        default="",
+        help="Directory where guest-triggered checkpoints are saved",
+    )
+    parser.add_argument(
+        "--restore-checkpoint",
+        default="",
+        help="Restore simulation state from the given checkpoint directory",
+    )
+    parser.add_argument(
+        "--readfile",
+        default="",
+        help="Host-side script path exposed through m5 readfile",
+    )
     args = parser.parse_args()
 
     for path_name in (args.bootloader, args.kernel, args.disk_image):
         if not Path(path_name).is_file():
             raise FileNotFoundError(f"required file not found: {path_name}")
+    if args.readfile and not Path(args.readfile).is_file():
+        raise FileNotFoundError(f"readfile not found: {args.readfile}")
+    if args.restore_checkpoint and not Path(args.restore_checkpoint).is_dir():
+        raise FileNotFoundError(
+            f"checkpoint directory not found: {args.restore_checkpoint}"
+        )
 
     board = build_board(args)
     simulator = Simulator(
         board=board,
         max_ticks=m5.MaxTick if args.max_ticks == 0 else args.max_ticks,
+    )
+    simulator._checkpoint_path = (
+        Path(args.checkpoint_dir) if args.checkpoint_dir else None
     )
 
     print(
@@ -269,6 +298,15 @@ def main():
             args.root_mountfrom, args.rootdevname
         )
     )
+    if args.restore_checkpoint:
+        print(f"Restoring FreeBSD checkpoint from {args.restore_checkpoint}")
+    if args.checkpoint_dir:
+        print(
+            "Guest-triggered checkpoints will be saved under "
+            f"{args.checkpoint_dir}"
+        )
+    if args.readfile:
+        print(f"Guest readfile source: {args.readfile}")
     print("Beginning FreeBSD boot simulation!")
     simulator.run()
     print(
