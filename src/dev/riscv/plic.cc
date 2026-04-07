@@ -375,9 +375,19 @@ Plic::readClaim(Register32& reg, const int context_id)
             return 0;
         }
     } else {
-        warn("PLIC claim repeated (not completed) - context: %d, last: %d",
-            context_id, lastID[context_id]);
-        return lastID[context_id];
+        /**
+         * The claim/complete register should only return an interrupt ID for a
+         * newly-claimed pending source. If software re-reads the register
+         * before completing the previously claimed source, the PLIC must not
+         * hand the same claim back again. Returning 0 here matches the way
+         * FreeBSD drains the claim register in a loop and avoids
+         * re-dispatching an interrupt that is already in flight.
+         */
+        DPRINTF(Plic,
+                "Claim polled before completion - context: %d, inflight: %d\n",
+                context_id, lastID[context_id]);
+        reg.update(0);
+        return 0;
     }
 }
 
