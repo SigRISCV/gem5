@@ -28,6 +28,8 @@
  */
 
 #include "arch/riscv/pmp.hh"
+#include <algorithm>
+
 #include "arch/generic/tlb.hh"
 #include "arch/riscv/faults.hh"
 #include "arch/riscv/isa.hh"
@@ -39,6 +41,7 @@
 #include "math.h"
 #include "mem/request.hh"
 #include "params/PMP.hh"
+#include "sim/serialize.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
@@ -289,6 +292,63 @@ PMP::pmpDecodeNapot(Addr pmpaddr)
         uint64_t base = mbits(pmpaddr, 63, t1) << 2;
         AddrRange this_range(base, base+range);
         return this_range;
+    }
+}
+
+void
+PMP::serialize(CheckpointOut &cp) const
+{
+    int pmpEntryNum = pmpEntries;
+    SERIALIZE_SCALAR(pmpEntryNum);
+
+    std::vector<Addr> rawAddrs;
+    std::vector<uint8_t> cfgs;
+    rawAddrs.reserve(pmpTable.size());
+    cfgs.reserve(pmpTable.size());
+
+    for (const auto &entry : pmpTable) {
+        rawAddrs.push_back(entry.rawAddr);
+        cfgs.push_back(entry.pmpCfg);
+    }
+
+    SERIALIZE_CONTAINER(rawAddrs);
+    SERIALIZE_CONTAINER(cfgs);
+}
+
+void
+PMP::unserialize(CheckpointIn &cp)
+{
+    int pmpEntryNum = 0;
+    UNSERIALIZE_SCALAR(pmpEntryNum);
+
+    std::vector<Addr> rawAddrs;
+    std::vector<uint8_t> cfgs;
+    UNSERIALIZE_CONTAINER(rawAddrs);
+    UNSERIALIZE_CONTAINER(cfgs);
+
+    if (pmpEntryNum != pmpEntries) {
+        warn("PMP checkpoint entry count (%d) does not match current PMP "
+             "configuration (%d); restoring the overlapping subset.\n",
+             pmpEntryNum, pmpEntries);
+    }
+
+    const auto restoreCount = std::min<size_t>(
+        pmpTable.size(), std::min(rawAddrs.size(), cfgs.size()));
+
+    for (auto &entry : pmpTable) {
+        entry.rawAddr = 0;
+        entry.pmpCfg = 0;
+        entry.pmpAddr = AddrRange(0, 0);
+    }
+
+    for (size_t i = 0; i < restoreCount; ++i) {
+        pmpTable[i].rawAddr = rawAddrs[i];
+        pmpTable[i].pmpCfg = cfgs[i];
+    }
+
+    numRules = 0;
+    for (uint32_t i = 0; i < pmpTable.size(); ++i) {
+        pmpUpdateRule(i);
     }
 }
 
