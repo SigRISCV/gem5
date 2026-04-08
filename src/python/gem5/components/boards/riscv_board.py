@@ -144,10 +144,18 @@ class RiscvBoard(
                 pio_addr=0x10008000,
             )
 
+            # The virtio benchmark disk
+            self.bench_disk = RiscvMmioVirtIO(
+                vio=VirtIOBlock(),
+                interrupt_id=0x9,
+                pio_size=4096,
+                pio_addr=0x10009000,
+            )
+
             # The virtio rng
             self.rng = RiscvMmioVirtIO(
                 vio=VirtIORng(),
-                interrupt_id=0x8,
+                interrupt_id=0xA,
                 pio_size=4096,
                 pio_addr=0x10007000,
             )
@@ -155,7 +163,12 @@ class RiscvBoard(
             # Note: This overrides the platform's code because the platform
             # isn't general enough.
             self._on_chip_devices = [self.platform.clint, self.platform.plic]
-            self._off_chip_devices = [self.platform.uart, self.disk, self.rng]
+            self._off_chip_devices = [
+                self.platform.uart,
+                self.disk,
+                self.bench_disk,
+                self.rng,
+            ]
 
         else:
             # SE mode board setup
@@ -533,6 +546,20 @@ class RiscvBoard(
         disk_node.appendCompatible(["virtio,mmio"])
         soc_node.append(disk_node)
 
+        # VirtIO MMIO benchmark disk node
+        bench_disk = self.bench_disk
+        bench_disk_node = bench_disk.generateBasicPioDeviceNode(
+            soc_state, "virtio_mmio", bench_disk.pio_addr, bench_disk.pio_size
+        )
+        bench_disk_node.append(
+            FdtPropertyWords("interrupts", [bench_disk.interrupt_id])
+        )
+        bench_disk_node.append(
+            FdtPropertyWords("interrupt-parent", soc_state.phandle(plic))
+        )
+        bench_disk_node.appendCompatible(["virtio,mmio"])
+        soc_node.append(bench_disk_node)
+
         # VirtIO MMIO rng node
         rng = self.rng
         rng_node = rng.generateBasicPioDeviceNode(
@@ -602,6 +629,13 @@ class RiscvBoard(
         # workload are set, we can generate the device tree file.
         self._setup_io_devices()
         self._setup_pma()
+
+    def set_secondary_disk_image(self, disk_image: AbstractResource) -> None:
+        image = CowDiskImage(
+            child=RawDiskImage(read_only=True), read_only=False
+        )
+        image.child.image_file = disk_image.get_local_path()
+        self.bench_disk.vio.image = image
 
     @overrides(KernelDiskWorkload)
     def get_default_kernel_args(self) -> List[str]:
