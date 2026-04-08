@@ -17,6 +17,8 @@ from gem5.resources.resource import (
     DiskImageResource,
     KernelResource,
 )
+from gem5.simulate.exit_event import ExitEvent
+from gem5.simulate.exit_event_generators import save_checkpoint_generator
 from gem5.simulate.simulator import Simulator
 from gem5.utils.requires import requires
 
@@ -275,12 +277,17 @@ def main():
         )
 
     board = build_board(args)
+    on_exit_event = None
+    if args.checkpoint_dir:
+        on_exit_event = {
+            ExitEvent.CHECKPOINT: save_checkpoint_generator(
+                Path(args.checkpoint_dir)
+            )
+        }
     simulator = Simulator(
         board=board,
+        on_exit_event=on_exit_event,
         max_ticks=m5.MaxTick if args.max_ticks == 0 else args.max_ticks,
-    )
-    simulator._checkpoint_path = (
-        Path(args.checkpoint_dir) if args.checkpoint_dir else None
     )
 
     print(
