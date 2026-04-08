@@ -25,8 +25,6 @@ from gem5.utils.requires import requires
 DEFAULT_ROOT_MOUNTFROM = "ufs:/dev/ufs/root"
 DEFAULT_ROOTDEVNAME = r"ufs:/dev/ufs/root"
 RED_HERRING_INTERPRETER = "/red/herring"
-VIRTIO_BLK_IRQ = 0x8
-VIRTIO_RNG_IRQ = 0x9
 
 
 def default_repo_root() -> Path:
@@ -112,12 +110,19 @@ def ensure_platform_devices(board: FreebsdRiscvBoard):
         raise RuntimeError("RISC-V platform is missing UART")
     if not hasattr(board, "disk"):
         raise RuntimeError("RISC-V platform is missing virtio disk")
+    if not hasattr(board, "bench_disk"):
+        raise RuntimeError("RISC-V platform is missing virtio benchmark disk")
     if not hasattr(board, "rng"):
         raise RuntimeError("RISC-V platform is missing virtio rng")
-    if int(board.disk.interrupt_id) == int(board.rng.interrupt_id):
+    interrupt_ids = {
+        int(board.disk.interrupt_id),
+        int(board.bench_disk.interrupt_id),
+        int(board.rng.interrupt_id),
+    }
+    if len(interrupt_ids) != 3:
         raise RuntimeError(
-            "virtio disk and rng share the same PLIC interrupt ID "
-            f"({int(board.disk.interrupt_id)})"
+            "virtio disk, benchmark disk, and rng must use distinct "
+            "PLIC interrupt IDs"
         )
 
 
@@ -163,8 +168,7 @@ def build_board(args):
         exit_on_work_items=False,
         checkpoint=checkpoint,
     )
-    board.disk.interrupt_id = VIRTIO_BLK_IRQ
-    board.rng.interrupt_id = VIRTIO_RNG_IRQ
+    board.set_secondary_disk_image(DiskImageResource(args.bench_image))
     ensure_platform_devices(board)
     board.platform.terminal.outfile = "stdoutput"
     return board
@@ -199,6 +203,11 @@ def main():
         "--disk-image",
         default=default_path("rootfs", "freebsd_sysroot.img"),
         help="Path to the FreeBSD disk image",
+    )
+    parser.add_argument(
+        "--bench-image",
+        default=default_path("rootfs", "bench.img"),
+        help="Path to the FreeBSD benchmark disk image",
     )
     parser.add_argument(
         "--cpu-type",
