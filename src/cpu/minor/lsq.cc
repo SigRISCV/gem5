@@ -1411,6 +1411,13 @@ LSQ::recvTimingResp(PacketPtr response)
         /* Response to a request from the transfers queue */
         request->retireResponse(response);
 
+        /* Queue LS decrypt timing when the load actually completes, not
+         * when it later reaches the head of Execute's in-flight queue.
+         * Otherwise the decrypt pipeline is serialized by in-order commit. */
+        if (request->isLoad && request->isComplete()) {
+            prepareSigriscvLoadResponse(request);
+        }
+
         DPRINTF(MinorMem, "Has outstanding packets?: %d %d\n",
             request->hasPacketsInMemSystem(), request->isComplete());
 
@@ -1646,10 +1653,6 @@ LSQ::findResponse(MinorDynInstPtr inst)
         /* Same instruction and complete access or a store that's
          *  capable of being moved to the store buffer */
         if (request->inst->id == inst->id) {
-            if (request->isLoad && request->isComplete()) {
-                prepareSigriscvLoadResponse(request);
-            }
-
             bool complete = request->isComplete();
             bool can_store = storeBuffer.canInsert();
             bool to_store_buffer = request->state ==
