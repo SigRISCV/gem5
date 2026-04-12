@@ -6678,7 +6678,9 @@ decode QUADRANT default Unknown::unknown() {
                 auto isa = static_cast<RiscvISA::ISA*>(
                     xc->tcBase()->getIsaPtr());
                 isa->propagatePcidToIntRegId(xc, destRegIdx(0).index());
-                isa->applySwitchsCommit(xc, Rd);
+                Addr link_addr = srcRegIdx(2).index() == int_reg::_ZeroIdx ?
+                    Rd : Rs2;
+                isa->applySwitchsCommit(xc, link_addr);
             }}, IsIndirectControl, IsUncondControl, IsCall);
             0x6: IdIOp::setrawid({{
                 Rd_sd = rvSext(Rs1_sd + imm);
