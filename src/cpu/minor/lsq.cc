@@ -109,6 +109,23 @@ isSigriscvSsEncmapInst(const MinorDynInstPtr &inst)
 }
 
 bool
+isSigriscvSsIdCryptoPath(const MinorDynInstPtr &inst, ThreadContext *thread)
+{
+    if (!isSigriscvSsIdInst(inst) || !thread) {
+        return false;
+    }
+
+    auto *isa = dynamic_cast<RiscvISA::ISA *>(thread->getIsaPtr());
+    if (!isa) {
+        return false;
+    }
+
+    RegIndex rs2_idx = inst->staticInst->srcRegIdx(1).index();
+    return rs2_idx != RiscvISA::int_reg::_ZeroIdx &&
+           isa->readGprId(rs2_idx) != 0;
+}
+
+bool
 usesSigriscvLsSsSemantics(ThreadContext *thread)
 {
     auto *isa = dynamic_cast<RiscvISA::ISA *>(thread->getIsaPtr());
@@ -143,7 +160,6 @@ LSQ::LSQRequest::LSQRequest(LSQ &port_, MinorDynInstPtr inst_, bool isLoad_,
       sigriscvLsMapPath(false),
       sigriscvLsEncmapPath(false),
       sigriscvSsPath(false),
-      sigriscvSsIdPath(false),
       sigriscvSsEncmapPath(false),
       sigriscvResponsePrepared(false),
       responseReadyCycle(0),
@@ -1813,9 +1829,8 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
     request->sigriscvLsEncmapPath =
         isLoad && isSigriscvLsEncmapInst(inst) && use_lsss_semantics;
     request->sigriscvSsPath =
-        !isLoad && isSigriscvSsInst(inst) && use_lsss_semantics;
-    request->sigriscvSsIdPath =
-        !isLoad && isSigriscvSsIdInst(inst) && use_lsss_semantics;
+        !isLoad && use_lsss_semantics &&
+        (isSigriscvSsInst(inst) || isSigriscvSsIdCryptoPath(inst, thread));
     request->sigriscvSsEncmapPath =
         !isLoad && isSigriscvSsEncmapInst(inst) && use_lsss_semantics;
 

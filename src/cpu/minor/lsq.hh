@@ -204,9 +204,6 @@ class LSQ : public Named
          *  therefore needs store-side crypto timing. */
         bool sigriscvSsPath;
 
-        /** True when this request is an SS.ID using extended semantics. */
-        bool sigriscvSsIdPath;
-
         /** True when this request is an SS.ENCMAP (`ss.id x0, ...`). */
         bool sigriscvSsEncmapPath;
 
