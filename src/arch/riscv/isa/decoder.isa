@@ -6657,20 +6657,6 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x16: decode FUNCT3 {
-            0x2: IdIOp::setdummyid({{
-                Rd_sd = rvSext(Rs1_sd + imm);
-            }}, id_code = {{
-                auto isa = static_cast<RiscvISA::ISA*>(
-                    xc->tcBase()->getIsaPtr());
-                isa->writeIntRegIdImmediate(xc, destRegIdx(0).index(), 1);
-            }});
-            0x3: IdIOp::setnewid({{
-                Rd_sd = rvSext(Rs1_sd + imm);
-            }}, id_code = {{
-                auto isa = static_cast<RiscvISA::ISA*>(
-                    xc->tcBase()->getIsaPtr());
-                isa->allocateIntRegNewId(xc, destRegIdx(0).index());
-            }});
             0x4: IdSwitchOp::switchs({{
                 Rd = rvSext(NPC);
                 NPC = rvSext(Rs1 & (~0x1));
@@ -6682,13 +6668,29 @@ decode QUADRANT default Unknown::unknown() {
                     Rd : Rs2;
                 isa->applySwitchsCommit(xc, link_addr);
             }}, IsIndirectControl, IsUncondControl, IsCall);
-            0x6: IdIOp::setrawid({{
-                Rd_sd = rvSext(Rs1_sd + imm);
-            }}, id_code = {{
-                auto isa = static_cast<RiscvISA::ISA*>(
-                    xc->tcBase()->getIsaPtr());
-                isa->writeIntRegIdImmediate(xc, destRegIdx(0).index(), 0);
-            }});
+            0x6: decode FUNCT7 {
+                0x0: IdROp::setrawid({{
+                    Rd_sd = rvSext(Rs1_sd + Rs2_sd);
+                }}, id_code = {{
+                    auto isa = static_cast<RiscvISA::ISA*>(
+                        xc->tcBase()->getIsaPtr());
+                    isa->writeIntRegIdImmediate(xc, destRegIdx(0).index(), 0);
+                }});
+                0x1: IdROp::setdummyid({{
+                    Rd_sd = rvSext(Rs1_sd + Rs2_sd);
+                }}, id_code = {{
+                    auto isa = static_cast<RiscvISA::ISA*>(
+                        xc->tcBase()->getIsaPtr());
+                    isa->writeIntRegIdImmediate(xc, destRegIdx(0).index(), 1);
+                }});
+                0x2: IdROp::setnewid({{
+                    Rd_sd = rvSext(Rs1_sd + Rs2_sd);
+                }}, id_code = {{
+                    auto isa = static_cast<RiscvISA::ISA*>(
+                        xc->tcBase()->getIsaPtr());
+                    isa->allocateIntRegNewId(xc, destRegIdx(0).index());
+                }});
+            }
             format DebugOp {
                 0x7: debug({{
                     auto isa = static_cast<RiscvISA::ISA*>(
