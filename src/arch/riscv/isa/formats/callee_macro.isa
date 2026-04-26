@@ -1,0 +1,432 @@
+// -*- mode:c++ -*-
+
+// Copyright (c) 2026
+// All rights reserved.
+
+def template CalleeMacroDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      public:
+        %(class_name)s(ExtMachInst machInst);
+
+      protected:
+        using %(base_class)s::%(base_class)s;
+
+        std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+    };
+}};
+
+def template CalleeSaveMacroConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst) :
+        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        StaticInstPtr cur_inst = nullptr;
+
+        const unsigned seq = machInst.rd;
+        const unsigned s_count = seq & 0xf;
+        const bool has_ra = seq & 0x10;
+        const int32_t base_offset = sext<12>(machInst.imm12);
+        const RegId saved_regs[] = {
+            int_reg::S0, int_reg::S1, int_reg::S2, int_reg::S3,
+            int_reg::S4, int_reg::S5, int_reg::S6, int_reg::S7,
+            int_reg::S8, int_reg::S9, int_reg::S10, int_reg::S11
+        };
+
+        if (machInst.rv_type == RV32 || s_count > 12 ||
+            (!has_ra && s_count == 0)) {
+            cur_inst = new Unknown(machInst);
+            cur_inst->setFlag(IsMicroop);
+            cur_inst->setDelayedCommit();
+            microops.emplace_back(cur_inst);
+        } else {
+            int32_t cur_offset = base_offset + (has_ra + s_count) * 8;
+
+            if (has_ra) {
+                cur_inst = new %(class_name)sStoreMicroInst(
+                    machInst, ReturnAddrReg, cur_offset);
+                cur_inst->setDelayedCommit();
+                microops.emplace_back(cur_inst);
+                cur_offset -= 8;
+            }
+
+            for (unsigned i = 0; i < s_count; ++i) {
+                cur_inst = new %(class_name)sStoreMicroInst(
+                    machInst, saved_regs[i], cur_offset);
+                cur_inst->setDelayedCommit();
+                microops.emplace_back(cur_inst);
+                cur_offset -= 8;
+            }
+
+            cur_inst = new %(class_name)sStoreMicroInst(
+                machInst, int_reg::Zero, base_offset);
+            cur_inst->setDelayedCommit();
+            microops.emplace_back(cur_inst);
+        }
+
+        microops.front()->setFirstMicroop();
+        microops.back()->setLastMicroop();
+    }
+}};
+
+def template CalleeRestoreMacroConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst) :
+        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        StaticInstPtr cur_inst = nullptr;
+
+        const unsigned seq = machInst.rd;
+        const unsigned s_count = seq & 0xf;
+        const bool has_ra = seq & 0x10;
+        const int32_t base_offset = sext<12>(machInst.imm12);
+        const RegId restored_regs[] = {
+            int_reg::S0, int_reg::S1, int_reg::S2, int_reg::S3,
+            int_reg::S4, int_reg::S5, int_reg::S6, int_reg::S7,
+            int_reg::S8, int_reg::S9, int_reg::S10, int_reg::S11
+        };
+
+        if (machInst.rv_type == RV32 || s_count > 12 ||
+            (!has_ra && s_count == 0)) {
+            cur_inst = new Unknown(machInst);
+            cur_inst->setFlag(IsMicroop);
+            cur_inst->setDelayedCommit();
+            microops.emplace_back(cur_inst);
+        } else {
+            cur_inst = new %(class_name)sLoadMicroInst(
+                machInst, int_reg::Zero, base_offset);
+            cur_inst->setDelayedCommit();
+            microops.emplace_back(cur_inst);
+
+            int32_t cur_offset = base_offset + (has_ra + s_count) * 8;
+
+            if (has_ra) {
+                cur_inst = new %(class_name)sLoadMicroInst(
+                    machInst, ReturnAddrReg, cur_offset);
+                cur_inst->setDelayedCommit();
+                microops.emplace_back(cur_inst);
+                cur_offset -= 8;
+            }
+
+            for (unsigned i = 0; i < s_count; ++i) {
+                cur_inst = new %(class_name)sLoadMicroInst(
+                    machInst, restored_regs[i], cur_offset);
+                cur_inst->setDelayedCommit();
+                microops.emplace_back(cur_inst);
+                cur_offset -= 8;
+            }
+        }
+
+        microops.front()->setFirstMicroop();
+        microops.back()->setLastMicroop();
+    }
+}};
+
+def template CalleeMacroExecute {{
+    std::string
+    %(class_name)s::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << machInst.rd << ", "
+           << sext<12>(machInst.imm12) << '('
+           << registerName(intRegClass[machInst.rs1]) << ')';
+        return ss.str();
+    }
+}};
+
+def template CalleeStoreMicroDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      public:
+        %(class_name)s(ExtMachInst machInst, RegId save_reg, int64_t offset);
+
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
+        Fault completeAcc(
+            Packet *, ExecContext *, trace::InstRecord *) const override;
+        std::string generateDisassembly(
+            Addr, const loader::SymbolTable *) const override;
+
+      protected:
+        using %(base_class)s::%(base_class)s;
+
+      private:
+        %(reg_idx_arr_decl)s;
+
+        int64_t offset;
+        Request::Flags memAccessFlags;
+    };
+}};
+
+def template CalleeStoreMicroConstructor {{
+    %(class_name)s::%(class_name)s(
+        ExtMachInst machInst, RegId save_reg, int64_t offset)
+        : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s),
+          offset(offset)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+    }
+}};
+
+def template CalleeStoreMicroExecute {{
+    Fault
+    %(class_name)s::execute(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        %(memacc_code)s;
+
+        {
+            Fault fault = writeMemAtomicLE(
+                xc, traceData, Mem, EA, memAccessFlags, nullptr);
+            if (fault != NoFault)
+                return fault;
+        }
+
+        %(op_wb)s;
+        return NoFault;
+    }
+
+    std::string
+    %(class_name)s::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", "
+           << offset << '(' << registerName(srcRegIdx(0)) << ')';
+        return ss.str();
+    }
+}};
+
+def template CalleeStoreMicroInitiateAcc {{
+    Fault
+    %(class_name)s::initiateAcc(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        %(memacc_code)s;
+
+        {
+            Fault fault = writeMemTimingLE(
+                xc, traceData, Mem, EA, memAccessFlags, nullptr);
+            if (fault != NoFault)
+                return fault;
+        }
+
+        %(op_wb)s;
+        return NoFault;
+    }
+}};
+
+def template CalleeStoreMicroCompleteAcc {{
+    Fault
+    %(class_name)s::completeAcc(
+        PacketPtr pkt, ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        return NoFault;
+    }
+}};
+
+def template CalleeLoadMicroDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      public:
+        %(class_name)s(
+            ExtMachInst machInst, RegId restore_reg, int64_t offset);
+
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
+        Fault completeAcc(
+            Packet *, ExecContext *, trace::InstRecord *) const override;
+        std::string generateDisassembly(
+            Addr, const loader::SymbolTable *) const override;
+
+      protected:
+        using %(base_class)s::%(base_class)s;
+
+      private:
+        %(reg_idx_arr_decl)s;
+
+        int64_t offset;
+        Request::Flags memAccessFlags;
+    };
+}};
+
+def template CalleeLoadMicroConstructor {{
+    %(class_name)s::%(class_name)s(
+        ExtMachInst machInst, RegId restore_reg, int64_t offset)
+        : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s),
+          offset(offset)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+    }
+}};
+
+def template CalleeLoadMicroExecute {{
+    Fault
+    %(class_name)s::execute(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        {
+            Fault fault =
+                readMemAtomicLE(xc, traceData, EA, Mem, memAccessFlags);
+            if (fault != NoFault)
+                return fault;
+        }
+
+        %(memacc_code)s;
+        %(op_wb)s;
+        return NoFault;
+    }
+
+    std::string
+    %(class_name)s::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+           << offset << '(' << registerName(srcRegIdx(0)) << ')';
+        return ss.str();
+    }
+}};
+
+def template CalleeLoadMicroInitiateAcc {{
+    Fault
+    %(class_name)s::initiateAcc(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_src_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        return initiateMemRead(xc, traceData, EA, Mem, memAccessFlags);
+    }
+}};
+
+def template CalleeLoadMicroCompleteAcc {{
+    Fault
+    %(class_name)s::completeAcc(
+        PacketPtr pkt, ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+        %(op_rd)s;
+
+        getMemLE(pkt, Mem, traceData);
+
+        %(memacc_code)s;
+        %(op_wb)s;
+        return NoFault;
+    }
+}};
+
+def format CalleeSaveMacro(*flags) {{
+    code = ''
+    macro_iop = InstObjParams(name, Name, 'RiscvMacroInst', code, flags)
+    header_output = CalleeMacroDeclare.subst(macro_iop)
+    decoder_output = CalleeSaveMacroConstructor.subst(macro_iop)
+    exec_output = CalleeMacroExecute.subst(macro_iop)
+    decode_block = BasicDecode.subst(macro_iop)
+
+    memacc_code = '''
+        auto isa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        RegIndex rs2_idx = srcRegIdx(1).index();
+        if (!isa->shouldApplyLsSsSemantics(xc)) {
+            Mem_ud = CalleeSaveReg_ud;
+        } else if (rs2_idx == int_reg::_ZeroIdx) {
+            Mem_ud = isa->readEncmap();
+        } else if (isa->readGprId(rs2_idx) == 0) {
+            isa->updateEncmapBit(rs2_idx, false);
+            Mem_ud = CalleeSaveReg_ud;
+        } else {
+            isa->updateEncmapBit(rs2_idx, true);
+            Addr ea = rvSext(Rs1 + offset);
+            RegVal tweak = isa->buildLsSsTweak(xc, machInst.rs1, ea);
+            RegVal keyl = isa->readLsSsKeyLow(xc);
+            RegVal keyh = isa->readLsSsKeyHigh(xc);
+            RegVal plain = isa->packLsSsPlain(
+                xc, CalleeSaveReg_ud, rs2_idx);
+            Mem_ud = qarma64_enc(plain, tweak, keyl, keyh, 7);
+        }
+    '''
+    ea_code = 'EA = rvSext(Rs1 + offset);'
+    micro_iop = InstObjParams(
+        'ss_id', f'{Name}StoreMicroInst', 'RiscvMicroInst',
+        {'ea_code': ea_code, 'memacc_code': memacc_code},
+        flags)
+
+    mem_flags = [getAlignFlag(micro_iop)]
+    s = '\n\tmemAccessFlags = ' + '|'.join(mem_flags) + ';'
+    micro_iop.constructor += s
+
+    header_output += CalleeStoreMicroDeclare.subst(micro_iop)
+    decoder_output += CalleeStoreMicroConstructor.subst(micro_iop)
+    exec_output += CalleeStoreMicroExecute.subst(micro_iop) + \
+        CalleeStoreMicroInitiateAcc.subst(micro_iop) + \
+        CalleeStoreMicroCompleteAcc.subst(micro_iop)
+}};
+
+def format CalleeRestoreMacro(*flags) {{
+    code = ''
+    macro_iop = InstObjParams(name, Name, 'RiscvMacroInst', code, flags)
+    header_output = CalleeMacroDeclare.subst(macro_iop)
+    decoder_output = CalleeRestoreMacroConstructor.subst(macro_iop)
+    exec_output = CalleeMacroExecute.subst(macro_iop)
+    decode_block = BasicDecode.subst(macro_iop)
+
+    memacc_code = '''
+        auto isa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
+        RegIndex rd_idx = destRegIdx(0).index();
+        if (!isa->shouldApplyLsSsSemantics(xc)) {
+            CalleeRestoreReg_sd = Mem_sd;
+        } else if (rd_idx == int_reg::_ZeroIdx) {
+            isa->writeEncmap(static_cast<RegVal>(Mem_sd));
+            CalleeRestoreReg_sd = 0;
+        } else if (!isa->readEncmapBit(rd_idx)) {
+            isa->clearIntRegId(xc, rd_idx);
+            CalleeRestoreReg_sd = Mem_sd;
+        } else {
+            Addr ea = rvSext(Rs1 + offset);
+            RegVal tweak = isa->buildLsSsTweak(xc, machInst.rs1, ea);
+            RegVal keyl = isa->readLsSsKeyLow(xc);
+            RegVal keyh = isa->readLsSsKeyHigh(xc);
+            RegVal result = qarma64_dec(
+                static_cast<RegVal>(Mem_sd), tweak, keyl, keyh, 7);
+            CalleeRestoreReg_sd = isa->finishLsResult(xc, rd_idx, result);
+        }
+    '''
+    ea_code = 'EA = rvSext(Rs1 + offset);'
+    micro_iop = InstObjParams(
+        'ls_map', f'{Name}LoadMicroInst', 'RiscvMicroInst',
+        {'ea_code': ea_code, 'memacc_code': memacc_code},
+        flags)
+
+    mem_flags = [getAlignFlag(micro_iop)]
+    s = '\n\tmemAccessFlags = ' + '|'.join(mem_flags) + ';'
+    micro_iop.constructor += s
+
+    header_output += CalleeLoadMicroDeclare.subst(micro_iop)
+    decoder_output += CalleeLoadMicroConstructor.subst(micro_iop)
+    exec_output += CalleeLoadMicroExecute.subst(micro_iop) + \
+        CalleeLoadMicroInitiateAcc.subst(micro_iop) + \
+        CalleeLoadMicroCompleteAcc.subst(micro_iop)
+}};

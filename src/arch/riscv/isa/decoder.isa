@@ -6657,6 +6657,8 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x16: decode FUNCT3 {
+            0x2: CalleeSaveMacro::calleesave();
+            0x3: CalleeRestoreMacro::calleerestore();
             0x4: IdSwitchOp::switchs({{
                 Rd = rvSext(NPC);
                 NPC = rvSext(Rs1 & (~0x1));

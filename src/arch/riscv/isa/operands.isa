@@ -78,6 +78,8 @@ def operands {{
 
     'CmPushReg': IntReg('ud', 'push_reg', 'IsInteger', 3),
     'CmPopReg': IntReg('ud', 'pop_reg', 'IsInteger', 1),
+    'CalleeSaveReg': IntReg('ud', 'save_reg', 'IsInteger', 3),
+    'CalleeRestoreReg': IntReg('ud', 'restore_reg', 'IsInteger', 1),
 
     'Fd': FloatRegOp('df', 'FD', 'IsFloating', 1),
     'Fd_bits': FloatRegOp('ud', 'FD', 'IsFloating', 1),
