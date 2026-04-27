@@ -66,7 +66,8 @@ namespace minor
 namespace
 {
 
-constexpr Cycles SigriscvCryptoDelay(3);
+constexpr Cycles LoadSigriscvCryptoDelay(3);
+constexpr Cycles StoreSigriscvCryptoDelay(3);
 
 bool
 isSigriscvLsIssuePath(const MinorDynInstPtr &inst)
@@ -779,10 +780,6 @@ Execute::issue(ThreadID thread_id)
                         }
 
                         issued_mem_ref = inst->isMemRef();
-
-                        if (issued_mem_ref && isSigriscvLsIssuePath(inst)) {
-                            extra_assumed_lat += SigriscvCryptoDelay;
-                        }
 
                         QueuedInst fu_inst(inst);
 

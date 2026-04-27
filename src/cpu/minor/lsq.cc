@@ -62,7 +62,8 @@ namespace minor
 namespace
 {
 
-constexpr Cycles SigriscvCryptoDelay(3);
+constexpr Cycles LoadSigriscvCryptoDelay(3);
+constexpr Cycles StoreSigriscvCryptoDelay(3);
 
 bool
 isSigriscvLsInst(const MinorDynInstPtr &inst)
@@ -1628,7 +1629,7 @@ LSQ::prepareSigriscvLoadResponse(LSQRequestPtr request)
     if (needs_decrypt) {
         Cycles start_cycle =
             std::max(cpu.curCycle(), sigriscvDecryptPipeNextIssueCycle[tid]);
-        request->responseReadyCycle = start_cycle + SigriscvCryptoDelay;
+        request->responseReadyCycle = start_cycle + LoadSigriscvCryptoDelay;
         sigriscvDecryptPipeNextIssueCycle[tid] = start_cycle + Cycles(1);
     }
 }
@@ -1835,7 +1836,7 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
         !isLoad && isSigriscvSsEncmapInst(inst) && use_lsss_semantics;
 
     if (request->sigriscvSsPath) {
-        request->cryptoReadyCycle = cpu.curCycle() + SigriscvCryptoDelay;
+        request->cryptoReadyCycle = cpu.curCycle() + StoreSigriscvCryptoDelay;
     }
 
     if (inst->traceData)
