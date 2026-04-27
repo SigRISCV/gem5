@@ -215,6 +215,10 @@ class LSQ : public Named
          *  to Execute::commit.  0 means no extra hold. */
         Cycles responseReadyCycle;
 
+        /** Earliest cycle at which the address/ID-dependent load crypto
+         *  precomputation is ready. 0 means no precomputation hold. */
+        Cycles cryptoPreReadyCycle;
+
         /** Earliest cycle at which an SS may issue its memory write.
          *  0 means no extra hold. */
         Cycles cryptoReadyCycle;

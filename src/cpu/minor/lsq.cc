@@ -62,7 +62,8 @@ namespace minor
 namespace
 {
 
-constexpr Cycles LoadSigriscvCryptoDelay(3);
+constexpr Cycles LoadSigriscvCryptoPreDelay(0);
+constexpr Cycles LoadSigriscvCryptoPostDelay(3);
 constexpr Cycles StoreSigriscvCryptoDelay(3);
 
 bool
@@ -164,6 +165,7 @@ LSQ::LSQRequest::LSQRequest(LSQ &port_, MinorDynInstPtr inst_, bool isLoad_,
       sigriscvSsEncmapPath(false),
       sigriscvResponsePrepared(false),
       responseReadyCycle(0),
+      cryptoPreReadyCycle(0),
       cryptoReadyCycle(0)
 {
     request = std::make_shared<Request>();
@@ -1628,8 +1630,10 @@ LSQ::prepareSigriscvLoadResponse(LSQRequestPtr request)
 
     if (needs_decrypt) {
         Cycles start_cycle =
-            std::max(cpu.curCycle(), sigriscvDecryptPipeNextIssueCycle[tid]);
-        request->responseReadyCycle = start_cycle + LoadSigriscvCryptoDelay;
+            std::max(std::max(cpu.curCycle(), request->cryptoPreReadyCycle),
+                     sigriscvDecryptPipeNextIssueCycle[tid]);
+        request->responseReadyCycle =
+            start_cycle + LoadSigriscvCryptoPostDelay;
         sigriscvDecryptPipeNextIssueCycle[tid] = start_cycle + Cycles(1);
     }
 }
@@ -1834,6 +1838,11 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
         (isSigriscvSsInst(inst) || isSigriscvSsIdCryptoPath(inst, thread));
     request->sigriscvSsEncmapPath =
         !isLoad && isSigriscvSsEncmapInst(inst) && use_lsss_semantics;
+
+    if (request->sigriscvLsPath || request->sigriscvLsMapPath) {
+        request->cryptoPreReadyCycle =
+            cpu.curCycle() + LoadSigriscvCryptoPreDelay;
+    }
 
     if (request->sigriscvSsPath) {
         request->cryptoReadyCycle = cpu.curCycle() + StoreSigriscvCryptoDelay;
