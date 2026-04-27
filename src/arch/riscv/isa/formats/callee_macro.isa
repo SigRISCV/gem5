@@ -348,25 +348,7 @@ def format CalleeSaveMacro(*flags) {{
     decode_block = BasicDecode.subst(macro_iop)
 
     memacc_code = '''
-        auto isa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
-        RegIndex rs2_idx = srcRegIdx(1).index();
-        if (!isa->shouldApplyLsSsSemantics(xc)) {
-            Mem_ud = CalleeSaveReg_ud;
-        } else if (rs2_idx == int_reg::_ZeroIdx) {
-            Mem_ud = isa->readEncmap();
-        } else if (isa->readGprId(rs2_idx) == 0) {
-            isa->updateEncmapBit(rs2_idx, false);
-            Mem_ud = CalleeSaveReg_ud;
-        } else {
-            isa->updateEncmapBit(rs2_idx, true);
-            Addr ea = rvSext(Rs1 + offset);
-            RegVal tweak = isa->buildLsSsTweak(xc, machInst.rs1, ea);
-            RegVal keyl = isa->readLsSsKeyLow(xc);
-            RegVal keyh = isa->readLsSsKeyHigh(xc);
-            RegVal plain = isa->packLsSsPlain(
-                xc, CalleeSaveReg_ud, rs2_idx);
-            Mem_ud = qarma64_enc(plain, tweak, keyl, keyh, 7);
-        }
+        Mem_ud = CalleeSaveReg_ud;
     '''
     ea_code = 'EA = rvSext(Rs1 + offset);'
     micro_iop = InstObjParams(
@@ -394,25 +376,7 @@ def format CalleeRestoreMacro(*flags) {{
     decode_block = BasicDecode.subst(macro_iop)
 
     memacc_code = '''
-        auto isa = static_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
-        RegIndex rd_idx = destRegIdx(0).index();
-        if (!isa->shouldApplyLsSsSemantics(xc)) {
-            CalleeRestoreReg_sd = Mem_sd;
-        } else if (rd_idx == int_reg::_ZeroIdx) {
-            isa->writeEncmap(static_cast<RegVal>(Mem_sd));
-            CalleeRestoreReg_sd = 0;
-        } else if (!isa->readEncmapBit(rd_idx)) {
-            isa->clearIntRegId(xc, rd_idx);
-            CalleeRestoreReg_sd = Mem_sd;
-        } else {
-            Addr ea = rvSext(Rs1 + offset);
-            RegVal tweak = isa->buildLsSsTweak(xc, machInst.rs1, ea);
-            RegVal keyl = isa->readLsSsKeyLow(xc);
-            RegVal keyh = isa->readLsSsKeyHigh(xc);
-            RegVal result = qarma64_dec(
-                static_cast<RegVal>(Mem_sd), tweak, keyl, keyh, 7);
-            CalleeRestoreReg_sd = isa->finishLsResult(xc, rd_idx, result);
-        }
+        CalleeRestoreReg_sd = Mem_sd;
     '''
     ea_code = 'EA = rvSext(Rs1 + offset);'
     micro_iop = InstObjParams(
