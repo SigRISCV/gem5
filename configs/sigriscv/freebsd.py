@@ -9,7 +9,10 @@ from gem5.components.cachehierarchies.classic.private_l1_private_l2_walk_cache_h
     PrivateL1PrivateL2WalkCacheHierarchy,
 )
 from gem5.components.memory import SingleChannelDDR3_1600
-from gem5.components.processors.cpu_types import get_cpu_type_from_str
+from gem5.components.processors.cpu_types import (
+    CPUTypes,
+    get_cpu_type_from_str,
+)
 from gem5.components.processors.simple_processor import SimpleProcessor
 from gem5.isas import ISA
 from gem5.resources.resource import (
@@ -139,6 +142,12 @@ def build_board(args):
     processor = SimpleProcessor(
         cpu_type=cpu_type, isa=ISA.RISCV, num_cores=args.num_cores
     )
+    if args.close_store_early_issue:
+        print(
+            "Setting executeAllowEarlyMemoryIssue to False for all cores to avoid early store issue"
+        )
+        for core in processor.get_cores():
+            core.get_simobject().executeAllowEarlyMemoryIssue = False
 
     board = FreebsdRiscvBoard(
         clk_freq=args.sys_clock,
@@ -272,6 +281,14 @@ def main():
         "--readfile",
         default="",
         help="Host-side script path exposed through m5 readfile",
+    )
+    parser.add_argument(
+        "--close-store-early-issue",
+        action="store_true",
+        help=(
+            "For minor CPU, set executeAllowEarlyMemoryIssue to False to "
+            "avoid stores being issued before their preceding instructions"
+        ),
     )
     args = parser.parse_args()
 
